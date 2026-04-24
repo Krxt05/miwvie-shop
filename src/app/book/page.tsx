@@ -159,9 +159,10 @@ function BookPage() {
         {/* Back to home */}
         <button
           onClick={() => router.push('/')}
-          className="flex items-center gap-1 text-white/40 hover:text-white text-sm mb-6 transition-colors"
+          className="flex items-center gap-2 text-white/40 hover:text-white text-sm mb-6 transition-colors"
         >
-          <ChevronLeft size={16} /> หน้าหลัก
+          <Image src="/logo.png" alt="" width={28} height={28} className="rounded-full opacity-70" />
+          หน้าหลัก
         </button>
 
         {/* Step indicator */}

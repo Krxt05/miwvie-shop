@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { Download, Copy, ExternalLink, Check } from 'lucide-react'
+import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
@@ -30,9 +31,9 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       const QRCode = (await import('qrcode')).default
       const payload = generatePromptPayPayload(PROMPTPAY, total)
       const url = await QRCode.toDataURL(payload, {
-        width: 200,
+        width: 160,
         margin: 1,
-        color: { dark: '#000000', light: '#ffffff' },
+        color: { dark: '#1a0030', light: '#ffffff' },
       })
       setQrDataUrl(url)
     }
@@ -45,7 +46,9 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 📅 รับ: ${format(form.pickupDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.
 📅 คืน: ${format(form.returnDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.
 💰 ยอดชำระ: ${total.toLocaleString()} บาท
-👤 ${form.customerName} / @${form.customerIG}`
+👤 ${form.customerName}
+📞 ${form.customerPhone}
+💳 PromptPay: ${PROMPTPAY}`
 
   async function handleCopy() {
     await navigator.clipboard.writeText(summaryText)
@@ -57,11 +60,10 @@ export default function ReceiptCard({ bookingId, form }: Props) {
     if (!receiptRef.current) return
     const html2canvas = (await import('html2canvas')).default
     const el = receiptRef.current
-    // Temporarily set solid background so html2canvas renders correctly
     const prev = el.style.cssText
-    el.style.cssText += ';background:#130018 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;border-color:#ff2d7840 !important;'
+    el.style.cssText += ';background:#100018 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;'
     const canvas = await html2canvas(el, {
-      background: '#130018',
+      background: '#100018',
       scale: 2,
       useCORS: true,
       logging: false,
@@ -79,61 +81,79 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 
   return (
     <div className="w-full max-w-sm mx-auto">
-      {/* Receipt card (screenshot target) */}
+      {/* Receipt card */}
       <div
         ref={receiptRef}
-        className="glass-pink rounded-2xl p-6 space-y-4"
+        className="glass-pink rounded-2xl overflow-hidden"
+        style={{ background: 'linear-gradient(160deg,#1a0030 0%,#0f0020 100%)' }}
       >
-        {/* Header */}
-        <div className="text-center">
-          <p className="text-xs text-white/60 uppercase tracking-widest mb-1">MIWVIE SHOP</p>
-          <h2 className="text-gradient font-display text-2xl font-bold">ใบจองกล้อง</h2>
-          <p className="text-xs text-white/60 mt-1">{bookingId}</p>
+        {/* Header — logo + title */}
+        <div className="flex flex-col items-center pt-5 pb-4 px-6 border-b border-dashed border-white/10">
+          <Image
+            src="/logo.png"
+            alt="MIWVIE SHOP"
+            width={72}
+            height={72}
+            className="rounded-full mb-2 drop-shadow-lg"
+          />
+          <p className="text-white/50 text-[10px] uppercase tracking-[0.2em]">MIWVIE SHOP</p>
+          <h2 className="text-gradient font-display text-xl font-bold leading-tight">ใบจองกล้อง</h2>
+          <p className="text-white/40 text-xs mt-0.5">{bookingId}</p>
         </div>
 
-        <div className="border-t border-dashed border-white/10 pt-4 space-y-2 text-sm">
-          <Row label="กล้อง" value={camera.name} />
+        {/* Booking details */}
+        <div className="px-6 py-4 space-y-2 text-sm border-b border-dashed border-white/10">
+          <Row label="กล้อง" value={camera.name} highlight />
           <Row
             label="รับ"
-            value={format(form.pickupDatetime, 'd MMM yyyy HH:mm', { locale: th }) + ' น.'}
+            value={format(form.pickupDatetime, 'd MMM yy HH:mm', { locale: th }) + ' น.'}
           />
           <Row
             label="คืน"
-            value={format(form.returnDatetime, 'd MMM yyyy HH:mm', { locale: th }) + ' น.'}
+            value={format(form.returnDatetime, 'd MMM yy HH:mm', { locale: th }) + ' น.'}
           />
           <Row
-            label="รับเครื่อง"
-            value={form.pickupType === 'self' ? 'รับเอง (ฟรี)' : `Delivery +15฿ → ${form.pickupAddress}`}
+            label="รับ/คืน"
+            value={`${form.pickupType === 'self' ? 'รับเอง' : 'Delivery'} / ${form.returnType === 'self' ? 'คืนเอง' : 'Delivery'}`}
           />
-          <Row
-            label="คืนเครื่อง"
-            value={form.returnType === 'self' ? 'คืนเอง (ฟรี)' : `Delivery +15฿`}
-          />
+          <Row label="ชื่อ" value={form.customerName} />
         </div>
 
-        <div className="border-t border-dashed border-white/10 pt-4 space-y-1 text-sm">
-          <Row label="ค่าเช่า" value={`${price.toLocaleString()} ฿`} />
-          {deliveryFee > 0 && <Row label="ค่าจัดส่ง" value={`+${deliveryFee} ฿`} />}
-          <div className="flex justify-between font-bold text-base text-pink pt-1 border-t border-white/10">
-            <span>ยอดชำระ</span>
-            <span>{total.toLocaleString()} ฿</span>
+        {/* Amount */}
+        <div className="px-6 py-3 border-b border-dashed border-white/10">
+          {deliveryFee > 0 && (
+            <Row label="ค่าเช่า" value={`${price.toLocaleString()} ฿`} />
+          )}
+          {deliveryFee > 0 && (
+            <Row label="ค่าจัดส่ง" value={`+${deliveryFee} ฿`} />
+          )}
+          <div className="flex justify-between items-baseline mt-1">
+            <span className="text-white font-bold text-sm">ยอดชำระ</span>
+            <span className="text-pink font-bold text-2xl">{total.toLocaleString()} ฿</span>
           </div>
         </div>
 
-        {/* QR Code */}
+        {/* QR Code — compact horizontal layout */}
         {qrDataUrl && (
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <p className="text-xs text-white/50">สแกนจ่ายผ่าน PromptPay</p>
-            <div className="bg-white rounded-xl p-3">
+          <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-white/10">
+            <div className="bg-white rounded-xl p-2 shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrDataUrl} alt="PromptPay QR" className="w-36 h-36" />
+              <img src={qrDataUrl} alt="PromptPay QR" className="w-24 h-24" />
             </div>
-            <p className="text-xs text-white/60">☎ {PROMPTPAY}</p>
+            <div className="space-y-1">
+              <p className="text-white/50 text-[11px]">สแกนจ่ายผ่าน</p>
+              <p className="text-white font-bold text-sm">PromptPay</p>
+              <p className="text-pink text-sm font-semibold">{PROMPTPAY}</p>
+              <p className="text-white/40 text-[10px]">ยอด {total.toLocaleString()} บาท</p>
+            </div>
           </div>
         )}
 
-        <div className="border-t border-dashed border-white/20 pt-3 text-center text-xs text-white/60">
-          ส่งสลิปมาที่ @miwvie_shop เพื่อยืนยันการจอง
+        {/* Footer */}
+        <div className="px-6 py-3 text-center">
+          <p className="text-white/50 text-xs">ส่งสลิปมาที่</p>
+          <p className="text-pink text-sm font-semibold">@miwvie_shop</p>
+          <p className="text-white/30 text-[10px] mt-0.5">เพื่อยืนยันการจอง</p>
         </div>
       </div>
 
@@ -156,11 +176,21 @@ export default function ReceiptCard({ bookingId, form }: Props) {
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  highlight,
+}: {
+  label: string
+  value: string
+  highlight?: boolean
+}) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-white/60 shrink-0">{label}</span>
-      <span className="text-right text-white">{value}</span>
+      <span className="text-white/50 shrink-0 text-sm">{label}</span>
+      <span className={`text-right text-sm ${highlight ? 'text-white font-semibold' : 'text-white/90'}`}>
+        {value}
+      </span>
     </div>
   )
 }

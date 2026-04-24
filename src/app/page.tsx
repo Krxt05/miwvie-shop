@@ -31,8 +31,11 @@ export default function Home() {
       </div>
 
       {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
-        <span className="font-display text-xl font-bold text-gradient">MIWVIE SHOP</span>
+      <nav className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
+        <div className="flex items-center gap-3">
+          <Image src="/logo.png" alt="MIWVIE SHOP" width={44} height={44} className="rounded-full drop-shadow-lg" />
+          <span className="font-display text-xl font-bold text-gradient">MIWVIE SHOP</span>
+        </div>
         <a
           href="https://www.instagram.com/miwvie_shop/"
           target="_blank"
@@ -44,8 +47,18 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <section className="relative z-10 px-6 pt-12 pb-20 max-w-5xl mx-auto text-center">
+      <section className="relative z-10 px-6 pt-8 pb-20 max-w-5xl mx-auto text-center">
         <motion.div initial="hidden" animate={mounted ? 'show' : 'hidden'} variants={STAGGER}>
+          <motion.div variants={FADE_UP} className="flex justify-center mb-6">
+            <Image
+              src="/logo.png"
+              alt="MIWVIE SHOP"
+              width={120}
+              height={120}
+              className="rounded-full drop-shadow-2xl"
+              style={{ filter: 'drop-shadow(0 0 24px rgba(255,45,120,0.4))' }}
+            />
+          </motion.div>
           <motion.p
             variants={FADE_UP}
             className="text-pink text-sm font-semibold tracking-widest uppercase mb-4"
