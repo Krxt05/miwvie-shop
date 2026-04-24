@@ -70,19 +70,30 @@ function BookPage() {
     if (pickupDatetime) setReturnDatetime(addHours(pickupDatetime, hours))
   }
 
-  async function toBase64(file: File): Promise<string> {
-    return new Promise((res, rej) => {
-      const r = new FileReader()
-      r.onload = () => res(r.result as string)
-      r.onerror = rej
-      r.readAsDataURL(file)
+  async function compressImage(file: File, maxPx = 1200, quality = 0.75): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = reject
+      img.src = url
     })
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, field: 'id' | 'ig') {
     const file = e.target.files?.[0]
     if (!file) return
-    const b64 = await toBase64(file)
+    const b64 = await compressImage(file)
     if (field === 'id') setIdCardImage(b64)
     else setIgProfileImage(b64)
   }

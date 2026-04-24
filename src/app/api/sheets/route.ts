@@ -22,16 +22,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Strip base64 images — too large for Vercel 4.5MB limit
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { idCardImage: _id, igProfileImage: _ig, ...safeBody } = body
-
+    // Images are compressed client-side to ~200KB before sending
     // Apps Script: POST /exec runs the script, then 302 → GET result URL
     // Default fetch follows redirect (POST→GET), which is correct here
     const res = await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(safeBody),
+      body: JSON.stringify(body),
     })
 
     const text = await res.text()
