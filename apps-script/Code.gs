@@ -27,6 +27,20 @@ function getAdminPin() {
   return PropertiesService.getScriptProperties().getProperty('ADMIN_PIN') || '1234'
 }
 
+// ── Spreadsheet helper ───────────────────────────────────────
+
+function getSpreadsheet() {
+  const props = PropertiesService.getScriptProperties()
+  let ssId = props.getProperty('SPREADSHEET_ID')
+  if (ssId) {
+    try { return SpreadsheetApp.openById(ssId) } catch (e) {}
+  }
+  // Create new spreadsheet on first run
+  const ss = SpreadsheetApp.create('MIWVIE SHOP — Bookings')
+  props.setProperty('SPREADSHEET_ID', ss.getId())
+  return ss
+}
+
 // ── Entry points ────────────────────────────────────────────
 
 function doGet(e) {
@@ -57,10 +71,10 @@ function json(data) {
 
 function handleGet(p) {
   switch (p.action) {
-    case 'setup':            return setupSheets()
-    case 'getAvailability':  return getAvailability(p.camera, p.month)
+    case 'setup':             return setupSheets()
+    case 'getAvailability':   return getAvailability(p.camera, p.month)
     case 'getAllAvailability': return getAllAvailability(p.month)
-    case 'getBooking':       return getBookingById(p.id)
+    case 'getBooking':        return getBookingById(p.id)
     default: return { error: 'Unknown action: ' + p.action }
   }
 }
@@ -69,10 +83,10 @@ function handleGet(p) {
 
 function handlePost(body) {
   switch (body.action) {
-    case 'createBooking':      return createBooking(body)
-    case 'getAdminBookings':   return getAdminBookings(body.pin)
+    case 'createBooking':       return createBooking(body)
+    case 'getAdminBookings':    return getAdminBookings(body.pin)
     case 'updateBookingStatus': return updateBookingStatus(body.bookingId, body.status, body.pin)
-    case 'blockDates':         return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
+    case 'blockDates':          return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -80,7 +94,7 @@ function handlePost(body) {
 // ── Setup ───────────────────────────────────────────────────
 
 function setupSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet()
+  const ss = getSpreadsheet()
 
   if (!ss.getSheetByName('bookings')) {
     const s = ss.insertSheet('bookings')
@@ -90,6 +104,9 @@ function setupSheets() {
     s.setColumnWidth(1, 160)
     s.setColumnWidth(5, 180)
     s.setColumnWidth(6, 180)
+    // Remove default "Sheet1"
+    const sheet1 = ss.getSheetByName('Sheet1')
+    if (sheet1) ss.deleteSheet(sheet1)
   }
 
   if (!ss.getSheetByName('blocked_slots')) {
@@ -108,13 +125,18 @@ function setupSheets() {
     props.setProperty('DRIVE_FOLDER_ID', folderId)
   }
 
-  return { success: true, message: 'Setup complete!', spreadsheetId: ss.getId() }
+  return {
+    success: true,
+    message: 'Setup complete!',
+    spreadsheetId: ss.getId(),
+    spreadsheetUrl: ss.getUrl()
+  }
 }
 
 // ── Availability ─────────────────────────────────────────────
 
 function getAvailability(cameraId, month) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet()
+  const ss = getSpreadsheet()
   const sheet = ss.getSheetByName('bookings')
   const blocked = ss.getSheetByName('blocked_slots')
   const slots = []
@@ -187,7 +209,7 @@ function getAllAvailability(month) {
 // ── Create booking ───────────────────────────────────────────
 
 function createBooking(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet()
+  const ss = getSpreadsheet()
   const sheet = ss.getSheetByName('bookings')
   if (!sheet) return { error: 'Run setup first via ?action=setup' }
 
@@ -222,9 +244,9 @@ function createBooking(data) {
     'pending', 'pending', ''
   ])
 
-  // Highlight new row in sheet
+  // Highlight pending payment row
   const lastRow = sheet.getLastRow()
-  sheet.getRange(lastRow, 21).setBackground('#fef3c7') // payment_status cell
+  sheet.getRange(lastRow, 21).setBackground('#fef3c7')
 
   return { success: true, bookingId }
 }
@@ -238,7 +260,7 @@ function generateBookingId(sheet) {
 // ── Get booking ──────────────────────────────────────────────
 
 function getBookingById(id) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('bookings')
+  const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet || sheet.getLastRow() < 2) return { booking: null }
 
   const data = sheet.getDataRange().getValues()
@@ -258,7 +280,7 @@ function getBookingById(id) {
 function getAdminBookings(pin) {
   if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('bookings')
+  const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet || sheet.getLastRow() < 2) return { bookings: [] }
 
   const data = sheet.getDataRange().getValues()
@@ -278,7 +300,7 @@ function getAdminBookings(pin) {
 function updateBookingStatus(bookingId, status, pin) {
   if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('bookings')
+  const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
 
   const data = sheet.getDataRange().getValues()
@@ -305,7 +327,7 @@ function updateBookingStatus(bookingId, status, pin) {
 function blockDates(cameraId, start, end, reason, pin) {
   if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('blocked_slots')
+  const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
 
   const id = 'BLK-' + Date.now()
