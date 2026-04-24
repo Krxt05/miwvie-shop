@@ -56,10 +56,17 @@ export default function ReceiptCard({ bookingId, form }: Props) {
   async function handleDownload() {
     if (!receiptRef.current) return
     const html2canvas = (await import('html2canvas')).default
-    const canvas = await html2canvas(receiptRef.current, {
-      background: '#1a0020',
+    const el = receiptRef.current
+    // Temporarily set solid background so html2canvas renders correctly
+    const prev = el.style.cssText
+    el.style.cssText += ';background:#130018 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;border-color:#ff2d7840 !important;'
+    const canvas = await html2canvas(el, {
+      backgroundColor: '#130018',
       scale: 2,
-    } as Parameters<typeof html2canvas>[1])
+      useCORS: true,
+      logging: false,
+    })
+    el.style.cssText = prev
     const a = document.createElement('a')
     a.href = canvas.toDataURL('image/png')
     a.download = `miwvie-receipt-${bookingId}.png`
@@ -79,9 +86,9 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       >
         {/* Header */}
         <div className="text-center">
-          <p className="text-xs text-white/40 uppercase tracking-widest mb-1">MIWVIE SHOP</p>
+          <p className="text-xs text-white/60 uppercase tracking-widest mb-1">MIWVIE SHOP</p>
           <h2 className="text-gradient font-display text-2xl font-bold">ใบจองกล้อง</h2>
-          <p className="text-xs text-white/40 mt-1">{bookingId}</p>
+          <p className="text-xs text-white/60 mt-1">{bookingId}</p>
         </div>
 
         <div className="border-t border-dashed border-white/10 pt-4 space-y-2 text-sm">
@@ -121,11 +128,11 @@ export default function ReceiptCard({ bookingId, form }: Props) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrDataUrl} alt="PromptPay QR" className="w-36 h-36" />
             </div>
-            <p className="text-xs text-white/40">☎ {PROMPTPAY}</p>
+            <p className="text-xs text-white/60">☎ {PROMPTPAY}</p>
           </div>
         )}
 
-        <div className="border-t border-dashed border-white/10 pt-3 text-center text-xs text-white/30">
+        <div className="border-t border-dashed border-white/20 pt-3 text-center text-xs text-white/60">
           ส่งสลิปมาที่ @miwvie_shop เพื่อยืนยันการจอง
         </div>
       </div>
@@ -152,8 +159,8 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-white/50 shrink-0">{label}</span>
-      <span className="text-right text-white/90">{value}</span>
+      <span className="text-white/60 shrink-0">{label}</span>
+      <span className="text-right text-white">{value}</span>
     </div>
   )
 }

@@ -104,14 +104,21 @@ export default function HourlyTimeline({
 
       {/* Timeline grid */}
       <div className="overflow-x-auto rounded-xl pb-1">
-        <div className="min-w-[700px]">
-          {/* Hour labels every 3h */}
-          <div className="flex mb-1 pl-[76px]">
-            {Array.from({ length: 9 }, (_, i) => i * 3).map((h) => (
-              <div key={h} style={{ width: `${100 / 8}%` }} className="text-xs text-white/30 text-left">
-                {String(h).padStart(2, '0')}:00
-              </div>
-            ))}
+        <div className="min-w-[640px]">
+          {/* Hour labels — same flex structure as slot rows for perfect alignment */}
+          <div className="flex items-end mb-1 gap-1">
+            <div className="w-20 shrink-0" />
+            <div className="flex flex-1 gap-px">
+              {HOURS.map((h) => (
+                <div key={h} className="flex-1 text-center">
+                  {h % 6 === 0 ? (
+                    <span className="text-[10px] text-white/40 leading-none">
+                      {String(h).padStart(2, '0')}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Day rows */}
@@ -132,7 +139,7 @@ export default function HourlyTimeline({
                     key={h}
                     title={`${format(day, 'd MMM')} ${String(h).padStart(2, '0')}:00`}
                     className={clsx(
-                      'flex-1 h-8 rounded-sm border transition-all duration-150 text-[10px]',
+                      'flex-1 h-8 rounded-sm border transition-all duration-150',
                       getSlotClass(day, h),
                     )}
                     onClick={() => handleClick(day, h)}
