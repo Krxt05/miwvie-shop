@@ -61,11 +61,11 @@ export default function ReceiptCard({ bookingId, form }: Props) {
     const prev = el.style.cssText
     el.style.cssText += ';background:#130018 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;border-color:#ff2d7840 !important;'
     const canvas = await html2canvas(el, {
-      backgroundColor: '#130018',
+      background: '#130018',
       scale: 2,
       useCORS: true,
       logging: false,
-    })
+    } as Parameters<typeof html2canvas>[1])
     el.style.cssText = prev
     const a = document.createElement('a')
     a.href = canvas.toDataURL('image/png')
