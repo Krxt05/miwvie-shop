@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pink: #ff2d78;
+  --pink-light: #ff6ba8;
+  --bg: #08000f;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: #fff;
+  font-family: var(--font-noto), sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 45, 120, 0.3);
+  border-radius: 2px;
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .glass-pink {
+    background: rgba(255, 45, 120, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 45, 120, 0.2);
+  }
+  .text-gradient {
+    background: linear-gradient(135deg, #ff2d78, #ff9ec4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .slot-available {
+    background: rgba(0, 230, 118, 0.15);
+    border-color: rgba(0, 230, 118, 0.3);
+  }
+  .slot-available:hover {
+    background: rgba(0, 230, 118, 0.3);
+    border-color: rgba(0, 230, 118, 0.6);
+    cursor: pointer;
+  }
+  .slot-busy {
+    background: rgba(255, 45, 120, 0.2);
+    border-color: rgba(255, 45, 120, 0.3);
+    cursor: not-allowed;
+  }
+  .slot-selected {
+    background: rgba(255, 45, 120, 0.4);
+    border-color: #ff2d78;
+    box-shadow: 0 0 8px rgba(255, 45, 120, 0.4);
+  }
+  .slot-past {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.05);
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+}
