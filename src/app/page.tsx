@@ -26,14 +26,17 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-dark">
       {/* Glow orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-pink/10 rounded-full blur-[120px]" />
-        <div className="absolute top-1/2 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px]" />
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-gold/10 rounded-full blur-[120px]" />
+        <div className="absolute top-1/2 -right-40 w-80 h-80 bg-pink/10 rounded-full blur-[100px]" />
+        <div className="absolute bottom-0 left-1/3 w-72 h-72 bg-gold/5 rounded-full blur-[100px]" />
       </div>
 
       {/* Nav */}
       <nav className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
         <div className="flex items-center gap-3">
-          <Image src="/logo.png" alt="MIWVIE SHOP" width={44} height={44} className="rounded-full drop-shadow-lg" />
+          <div className="p-[2px] rounded-full shrink-0" style={{ background: 'linear-gradient(135deg, #d4a227, #f0d060, #c9a020)' }}>
+            <Image src="/logo.png" alt="MIWVIE SHOP" width={40} height={40} className="rounded-full block" />
+          </div>
           <span className="font-display text-xl font-bold text-gradient">MIWVIE SHOP</span>
         </div>
         <a
@@ -50,18 +53,23 @@ export default function Home() {
       <section className="relative z-10 px-6 pt-8 pb-20 max-w-5xl mx-auto text-center">
         <motion.div initial="hidden" animate={mounted ? 'show' : 'hidden'} variants={STAGGER}>
           <motion.div variants={FADE_UP} className="flex justify-center mb-6">
-            <Image
-              src="/logo.png"
-              alt="MIWVIE SHOP"
-              width={120}
-              height={120}
-              className="rounded-full drop-shadow-2xl"
-              style={{ filter: 'drop-shadow(0 0 24px rgba(255,45,120,0.4))' }}
-            />
+            <div
+              className="p-[3px] rounded-full animate-pulse-pink"
+              style={{ background: 'linear-gradient(135deg, #d4a227, #f0d060, #c9a020, #d4a227)' }}
+            >
+              <Image
+                src="/logo.png"
+                alt="MIWVIE SHOP"
+                width={140}
+                height={140}
+                className="rounded-full block"
+                style={{ filter: 'drop-shadow(0 0 20px rgba(212,162,39,0.6)) drop-shadow(0 0 40px rgba(224,90,140,0.25))' }}
+              />
+            </div>
           </motion.div>
           <motion.p
             variants={FADE_UP}
-            className="text-pink text-sm font-semibold tracking-widest uppercase mb-4"
+            className="text-gold text-sm font-semibold tracking-widest uppercase mb-4"
           >
             Digital Camera Rental · มมส.
           </motion.p>
@@ -73,6 +81,7 @@ export default function Home() {
             <br />
             <span className="text-gradient">สวยทุกช็อต</span>
           </motion.h1>
+
           <motion.p variants={FADE_UP} className="text-white/50 text-lg mb-8 max-w-md mx-auto">
             Canon IXY ราคาถูก นับ 24 ชม. จากเวลารับจริง ส่งทั่วประเทศ
           </motion.p>

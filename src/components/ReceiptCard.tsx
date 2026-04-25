@@ -33,7 +33,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       const url = await QRCode.toDataURL(payload, {
         width: 160,
         margin: 1,
-        color: { dark: '#1a0030', light: '#ffffff' },
+        color: { dark: '#1a0818', light: '#ffffff' },
       })
       setQrDataUrl(url)
     }
@@ -61,9 +61,9 @@ export default function ReceiptCard({ bookingId, form }: Props) {
     const html2canvas = (await import('html2canvas')).default
     const el = receiptRef.current
     const prev = el.style.cssText
-    el.style.cssText += ';background:#100018 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;'
+    el.style.cssText += ';background:#120818 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;'
     const canvas = await html2canvas(el, {
-      background: '#100018',
+      background: '#120818',
       scale: 2,
       useCORS: true,
       logging: false,
@@ -85,24 +85,26 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       <div
         ref={receiptRef}
         className="glass-pink rounded-2xl overflow-hidden"
-        style={{ background: 'linear-gradient(160deg,#1a0030 0%,#0f0020 100%)' }}
+        style={{ background: 'linear-gradient(160deg,#1a0a20 0%,#0f0818 100%)' }}
       >
         {/* Header — logo + title */}
-        <div className="flex flex-col items-center pt-5 pb-4 px-6 border-b border-dashed border-white/10">
-          <Image
-            src="/logo.png"
-            alt="MIWVIE SHOP"
-            width={72}
-            height={72}
-            className="rounded-full mb-2 drop-shadow-lg"
-          />
-          <p className="text-white/50 text-[10px] uppercase tracking-[0.2em]">MIWVIE SHOP</p>
+        <div className="flex flex-col items-center pt-5 pb-4 px-6 border-b border-dashed border-gold/20">
+          <div className="p-[3px] rounded-full mb-2 drop-shadow-lg" style={{ background: 'linear-gradient(135deg, #d4a227, #f0d060, #c9a020, #d4a227)' }}>
+            <Image
+              src="/logo.png"
+              alt="MIWVIE SHOP"
+              width={72}
+              height={72}
+              className="rounded-full block"
+            />
+          </div>
+          <p className="text-gold/70 text-[10px] uppercase tracking-[0.2em]">MIWVIE SHOP</p>
           <h2 className="text-gradient font-display text-xl font-bold leading-tight">ใบจองกล้อง</h2>
           <p className="text-white/40 text-xs mt-0.5">{bookingId}</p>
         </div>
 
         {/* Booking details */}
-        <div className="px-6 py-4 space-y-2 text-sm border-b border-dashed border-white/10">
+        <div className="px-6 py-4 space-y-2 text-sm border-b border-dashed border-gold/20">
           <Row label="กล้อง" value={camera.name} highlight />
           <Row
             label="รับ"
@@ -120,7 +122,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
         </div>
 
         {/* Amount */}
-        <div className="px-6 py-3 border-b border-dashed border-white/10">
+        <div className="px-6 py-3 border-b border-dashed border-gold/20">
           {deliveryFee > 0 && (
             <Row label="ค่าเช่า" value={`${price.toLocaleString()} ฿`} />
           )}
@@ -135,7 +137,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 
         {/* QR Code — compact horizontal layout */}
         {qrDataUrl && (
-          <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-white/10">
+          <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-gold/20">
             <div className="bg-white rounded-xl p-2 shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrDataUrl} alt="PromptPay QR" className="w-24 h-24" />

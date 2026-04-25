@@ -104,18 +104,16 @@ export default function HourlyTimeline({
 
       {/* Timeline grid */}
       <div className="overflow-x-auto rounded-xl pb-1">
-        <div className="min-w-[640px]">
-          {/* Hour labels — same flex structure as slot rows for perfect alignment */}
+        <div className="min-w-[720px]">
+          {/* Hour labels — every hour */}
           <div className="flex items-end mb-1 gap-1">
             <div className="w-20 shrink-0" />
             <div className="flex flex-1 gap-px">
               {HOURS.map((h) => (
                 <div key={h} className="flex-1 text-center">
-                  {h % 6 === 0 ? (
-                    <span className="text-[10px] text-white/40 leading-none">
-                      {String(h).padStart(2, '0')}
-                    </span>
-                  ) : null}
+                  <span className={`text-[9px] leading-none ${h % 6 === 0 ? 'text-white/60 font-semibold' : 'text-white/30'}`}>
+                    {String(h).padStart(2, '0')}
+                  </span>
                 </div>
               ))}
             </div>
