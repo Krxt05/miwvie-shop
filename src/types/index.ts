@@ -51,8 +51,10 @@ export interface BookingFormData {
   customerName: string
   customerPhone: string
   customerIG: string
-  idCardImage: string    // base64
-  igProfileImage: string // base64
+  idCardImage: string
+  igProfileImage: string
+  discountCode: string
+  discountAmount: number
 }
 
 export interface Booking extends BookingFormData {

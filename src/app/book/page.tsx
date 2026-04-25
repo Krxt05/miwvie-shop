@@ -5,9 +5,9 @@ import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { addHours, format, differenceInHours } from 'date-fns'
 import { th } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Upload, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader } from 'lucide-react'
 import { CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee } from '@/lib/cameras'
-import { getAvailability, createBooking } from '@/lib/api'
+import { getAvailability, createBooking, validateDiscountCode } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import ReceiptCard from '@/components/ReceiptCard'
 import Button from '@/components/ui/Button'
@@ -44,6 +44,10 @@ function BookPage() {
   const [customerIG, setCustomerIG] = useState('')
   const [idCardImage, setIdCardImage] = useState('')
   const [igProfileImage, setIgProfileImage] = useState('')
+  const [discountCode, setDiscountCode] = useState('')
+  const [discountAmount, setDiscountAmount] = useState(0)
+  const [discountStatus, setDiscountStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
+  const [discountError, setDiscountError] = useState('')
   const [bookingId, setBookingId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -147,6 +151,8 @@ function BookPage() {
         customerIG,
         idCardImage,
         igProfileImage,
+        discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',
+        discountAmount: discountStatus === 'valid' ? discountAmount : 0,
       }
       const { bookingId: id } = await createBooking(form)
       setBookingId(id)
@@ -158,9 +164,27 @@ function BookPage() {
     }
   }
 
+  async function checkDiscountCode(code: string) {
+    const trimmed = code.trim().toUpperCase()
+    if (!trimmed) { setDiscountStatus('idle'); setDiscountAmount(0); setDiscountError(''); return }
+    setDiscountStatus('checking')
+    const res = await validateDiscountCode(trimmed)
+    if (res.valid) {
+      const price = camera ? calcPrice(camera.priceGroup, durationHours) : 0
+      const amt = Math.floor(price * 0.1)
+      setDiscountAmount(amt)
+      setDiscountStatus('valid')
+      setDiscountError('')
+    } else {
+      setDiscountAmount(0)
+      setDiscountStatus('invalid')
+      setDiscountError(res.error ?? 'โค้ดไม่ถูกต้อง')
+    }
+  }
+
   const price = camera ? calcPrice(camera.priceGroup, durationHours) : 0
   const deliveryFee = calcDeliveryFee(pickupType, returnType)
-  const total = price + deliveryFee
+  const total = price - discountAmount + deliveryFee
 
   const selectionConflict = !!(pickupDatetime && returnDatetime && cameraId) &&
     bookedSlots.some((slot) => {
@@ -338,7 +362,7 @@ function BookPage() {
                     {!selectionConflict && (
                       <div className="flex justify-between font-semibold text-gold border-t border-white/10 pt-2">
                         <span>ค่าเช่า</span>
-                        <span>{price.toLocaleString()} ฿</span>
+                        <span>{calcPrice(camera!.priceGroup, durationHours).toLocaleString()} ฿</span>
                       </div>
                     )}
                   </motion.div>
@@ -464,6 +488,43 @@ function BookPage() {
                     {errors.idCard && <p className="text-pink text-xs mt-1">{errors.idCard}</p>}
                   </div>
 
+                  {/* Discount code */}
+                  <div>
+                    <p className="text-sm text-white/60 mb-2 flex items-center gap-1">
+                      <Tag size={13} /> โค้ดส่วนลด <span className="text-white/30">(ถ้ามี)</span>
+                    </p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={discountCode}
+                        onChange={(e) => {
+                          const v = e.target.value.toUpperCase()
+                          setDiscountCode(v)
+                          setDiscountStatus('idle')
+                          setDiscountAmount(0)
+                          setDiscountError('')
+                        }}
+                        onBlur={() => checkDiscountCode(discountCode)}
+                        placeholder="MIW-XXXXXX"
+                        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors font-mono tracking-widest placeholder:text-white/25 placeholder:font-sans placeholder:tracking-normal ${
+                          discountStatus === 'valid' ? 'border-emerald-500/50' :
+                          discountStatus === 'invalid' ? 'border-pink/50' : 'focus:border-gold/40'
+                        }`}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {discountStatus === 'checking' && <Loader size={16} className="text-white/40 animate-spin" />}
+                        {discountStatus === 'valid' && <CheckIcon size={16} className="text-emerald-400" />}
+                        {discountStatus === 'invalid' && <X size={16} className="text-pink" />}
+                      </div>
+                    </div>
+                    {discountStatus === 'valid' && (
+                      <p className="text-emerald-400 text-xs mt-1">✓ ส่วนลด 10% ({discountAmount.toLocaleString()} ฿) ถูกนำไปใช้แล้ว</p>
+                    )}
+                    {discountStatus === 'invalid' && (
+                      <p className="text-pink text-xs mt-1">{discountError}</p>
+                    )}
+                  </div>
+
                   <div>
                     <p className="text-sm text-white/60 mb-2">หน้าโปรไฟล์ IG / Facebook</p>
                     <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
@@ -513,14 +574,19 @@ function BookPage() {
                   <SummaryRow label="โทร" value={customerPhone} />
                   <div className="border-t border-white/10 pt-3 space-y-1">
                     <div className="flex justify-between text-white/60">
-                      <span>ค่าเช่า</span><span>{price.toLocaleString()} ฿</span>
+                      <span>ค่าเช่า</span><span>{calcPrice(camera!.priceGroup, durationHours).toLocaleString()} ฿</span>
                     </div>
+                    {discountAmount > 0 && (
+                      <div className="flex justify-between text-emerald-400">
+                        <span>ส่วนลด 10% ({discountCode})</span><span>-{discountAmount.toLocaleString()} ฿</span>
+                      </div>
+                    )}
                     {deliveryFee > 0 && (
                       <div className="flex justify-between text-white/60">
                         <span>ค่าจัดส่ง</span><span>+{deliveryFee} ฿</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-bold text-lg text-pink">
+                    <div className="flex justify-between font-bold text-lg text-gold">
                       <span>ยอดชำระ</span><span>{total.toLocaleString()} ฿</span>
                     </div>
                   </div>
@@ -557,6 +623,8 @@ function BookPage() {
                     customerIG,
                     idCardImage,
                     igProfileImage,
+                    discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',
+                    discountAmount: discountStatus === 'valid' ? discountAmount : 0,
                   }}
                 />
               </div>

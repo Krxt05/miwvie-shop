@@ -22,7 +22,9 @@ export default function ReceiptCard({ bookingId, form }: Props) {
   const receiptRef = useRef<HTMLDivElement>(null)
 
   const camera = CAMERAS.find((c) => c.id === form.cameraId)!
-  const price = calcPrice(camera.priceGroup, form.durationHours)
+  const basePrice = calcPrice(camera.priceGroup, form.durationHours)
+  const discountAmount = form.discountAmount ?? 0
+  const price = basePrice - discountAmount
   const deliveryFee = calcDeliveryFee(form.pickupType, form.returnType)
   const total = price + deliveryFee
 
@@ -104,15 +106,18 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 
         {/* Amount */}
         <div className="px-6 py-3 border-b border-dashed border-gold/20">
-          {deliveryFee > 0 && (
-            <Row label="ค่าเช่า" value={`${price.toLocaleString()} ฿`} />
+          {(deliveryFee > 0 || discountAmount > 0) && (
+            <Row label="ค่าเช่า" value={`${basePrice.toLocaleString()} ฿`} />
+          )}
+          {discountAmount > 0 && (
+            <Row label={`ส่วนลด 10% (${form.discountCode})`} value={`-${discountAmount.toLocaleString()} ฿`} highlight accent="emerald" />
           )}
           {deliveryFee > 0 && (
             <Row label="ค่าจัดส่ง" value={`+${deliveryFee} ฿`} />
           )}
           <div className="flex justify-between items-baseline mt-1">
             <span className="text-white font-bold text-sm">ยอดชำระ</span>
-            <span className="text-pink font-bold text-2xl">{total.toLocaleString()} ฿</span>
+            <span className="text-gold font-bold text-2xl">{total.toLocaleString()} ฿</span>
           </div>
         </div>
 
@@ -167,15 +172,17 @@ function Row({
   label,
   value,
   highlight,
+  accent,
 }: {
   label: string
   value: string
   highlight?: boolean
+  accent?: 'emerald'
 }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-white/50 shrink-0 text-sm">{label}</span>
-      <span className={`text-right text-sm ${highlight ? 'text-white font-semibold' : 'text-white/90'}`}>
+      <span className={`shrink-0 text-sm ${accent === 'emerald' ? 'text-emerald-400' : 'text-white/50'}`}>{label}</span>
+      <span className={`text-right text-sm ${accent === 'emerald' ? 'text-emerald-400 font-semibold' : highlight ? 'text-white font-semibold' : 'text-white/90'}`}>
         {value}
       </span>
     </div>

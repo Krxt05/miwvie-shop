@@ -55,16 +55,16 @@ export async function createBooking(form: BookingFormData): Promise<{ bookingId:
   const camera = getCameraById(form.cameraId)!
   const price = calcPrice(camera.priceGroup, form.durationHours)
   const deliveryFee = calcDeliveryFee(form.pickupType, form.returnType)
+  const discountedPrice = price - (form.discountAmount ?? 0)
   const data = await post({
     action: 'createBooking',
     ...form,
     pickupDatetime: form.pickupDatetime.toISOString(),
     returnDatetime: form.returnDatetime.toISOString(),
-    price,
+    price: discountedPrice,
     deliveryFee,
-    totalAmount: price + deliveryFee,
+    totalAmount: discountedPrice + deliveryFee,
   })
-  // Fallback: generate local ID when backend not yet configured
   if (!data.bookingId) {
     const d = new Date()
     const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
@@ -78,9 +78,19 @@ export async function getBooking(bookingId: string): Promise<Booking | null> {
   return data.booking ?? null
 }
 
-export async function getAdminBookings(pin: string): Promise<Booking[]> {
+export async function getAdminBookings(pin: string): Promise<Booking[] | null> {
   const data = await post({ action: 'getAdminBookings', pin })
+  if (data.error) return null
   return data.bookings ?? []
+}
+
+export async function validateDiscountCode(code: string): Promise<{ valid: boolean; error?: string; discount?: number }> {
+  const data = await get({ action: 'validateDiscountCode', code })
+  return data
+}
+
+export async function generateDiscountCode(bookingId: string, pin: string): Promise<{ code?: string; error?: string }> {
+  return post({ action: 'generateDiscountCode', bookingId, pin })
 }
 
 export async function updateBookingStatus(

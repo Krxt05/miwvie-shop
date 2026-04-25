@@ -5,9 +5,9 @@ import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import {
   Lock, RefreshCw, ChevronDown, ChevronUp, ExternalLink,
-  CheckCircle, Package, RotateCcw, XCircle, Search,
+  CheckCircle, Package, RotateCcw, XCircle, Search, Gift, Copy, Check,
 } from 'lucide-react'
-import { getAdminBookings, updateBookingStatus } from '@/lib/api'
+import { getAdminBookings, updateBookingStatus, generateDiscountCode } from '@/lib/api'
 import { Booking, BookingStatus, CameraId } from '@/types'
 import { CAMERAS } from '@/lib/cameras'
 import Badge from '@/components/ui/Badge'
@@ -32,12 +32,15 @@ export default function AdminPage() {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [discountCodes, setDiscountCodes] = useState<Record<string, string>>({})
+  const [codeLoading, setCodeLoading] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     const data = await getAdminBookings(pin)
-    if (Array.isArray(data)) {
+    if (data !== null) {
       setBookings(data)
       setAuthed(true)
     } else {
@@ -49,7 +52,7 @@ export default function AdminPage() {
   async function refresh() {
     setLoading(true)
     const data = await getAdminBookings(pin)
-    if (Array.isArray(data)) setBookings(data)
+    if (data !== null) setBookings(data)
     setLoading(false)
   }
 
@@ -71,6 +74,23 @@ export default function AdminPage() {
   async function handleCancel(bookingId: string) {
     if (!confirm(`ยืนยันยกเลิก ${bookingId}?`)) return
     await handleAction(bookingId, 'cancelled')
+  }
+
+  async function handleGenerateCode(bookingId: string) {
+    setCodeLoading(bookingId)
+    const res = await generateDiscountCode(bookingId, pin)
+    if (res.code) {
+      setDiscountCodes((prev) => ({ ...prev, [bookingId]: res.code! }))
+    } else {
+      alert(res.error || 'เกิดข้อผิดพลาด')
+    }
+    setCodeLoading(null)
+  }
+
+  async function copyCode(code: string) {
+    await navigator.clipboard.writeText(code)
+    setCopied(code)
+    setTimeout(() => setCopied(null), 2000)
   }
 
   const filtered = bookings.filter((b) => {
@@ -105,8 +125,8 @@ export default function AdminPage() {
           className="glass-pink rounded-2xl p-8 w-full max-w-sm"
         >
           <div className="text-center mb-6">
-            <div className="w-12 h-12 bg-pink/20 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Lock size={22} className="text-pink" />
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(212,162,39,0.2)' }}>
+              <Lock size={22} className="text-gold" />
             </div>
             <h1 className="text-xl font-bold">Admin</h1>
             <p className="text-white/40 text-sm">MIWVIE SHOP</p>
@@ -117,7 +137,7 @@ export default function AdminPage() {
               value={pin}
               onChange={(e) => { setPin(e.target.value); setAuthError('') }}
               placeholder="PIN"
-              className="w-full glass rounded-xl px-4 py-3 text-center text-xl tracking-widest outline-none focus:border-pink placeholder:text-white/20 placeholder:text-base placeholder:tracking-normal"
+              className="w-full glass rounded-xl px-4 py-3 text-center text-xl tracking-widest outline-none focus:border-gold/50 placeholder:text-white/20 placeholder:text-base placeholder:tracking-normal"
               autoFocus
             />
             {authError && <p className="text-pink text-sm text-center">{authError}</p>}
@@ -133,7 +153,7 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-gradient-dark">
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-pink/10 rounded-full blur-[120px]" />
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-gold/5 rounded-full blur-[120px]" />
       </div>
 
       <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
@@ -157,7 +177,7 @@ export default function AdminPage() {
             { label: 'รอยืนยัน', value: stats.pending, color: 'text-yellow-400' },
             { label: 'ยืนยันแล้ว', value: stats.confirmed, color: 'text-blue-400' },
             { label: 'กำลังเช่า', value: stats.active, color: 'text-emerald-400' },
-            { label: 'รายได้รวม', value: `${stats.revenue.toLocaleString()}฿`, color: 'text-pink' },
+            { label: 'รายได้รวม', value: `${stats.revenue.toLocaleString()}฿`, color: 'text-gold' },
           ].map((s) => (
             <div key={s.label} className="glass rounded-xl p-4">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -211,6 +231,7 @@ export default function AdminPage() {
           {filtered.map((b) => {
             const isExpanded = expanded === b.bookingId
             const actions = STATUS_ACTIONS[b.bookingStatus] ?? []
+            const existingCode = discountCodes[b.bookingId] || String(b.discountCode || '')
 
             return (
               <div key={b.bookingId} className="glass rounded-xl overflow-hidden">
@@ -228,6 +249,9 @@ export default function AdminPage() {
                         b.bookingStatus === 'active' ? 'กำลังเช่า' :
                         b.bookingStatus === 'returned' ? 'คืนแล้ว' : 'ยกเลิก'
                       } variant={b.bookingStatus} />
+                      {Number(b.discountAmount) > 0 && (
+                        <span className="text-[10px] text-gold border border-gold/30 rounded-full px-1.5 py-0.5">ส่วนลด</span>
+                      )}
                     </div>
                     <p className="font-semibold text-sm truncate">{String(b.customerName)}</p>
                     <p className="text-white/40 text-xs">
@@ -238,7 +262,7 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-pink font-bold">{Number(b.totalAmount).toLocaleString()} ฿</p>
+                    <p className="text-gold font-bold">{Number(b.totalAmount).toLocaleString()} ฿</p>
                     {isExpanded ? <ChevronUp size={16} className="text-white/30 ml-auto mt-1" /> : <ChevronDown size={16} className="text-white/30 ml-auto mt-1" />}
                   </div>
                 </button>
@@ -278,6 +302,15 @@ export default function AdminPage() {
                           />
                         </div>
 
+                        {/* Discount info */}
+                        {(Number(b.discountAmount) > 0 || b.discountCode) && (
+                          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'rgba(212,162,39,0.1)', border: '1px solid rgba(212,162,39,0.2)' }}>
+                            <span className="text-gold">โค้ดส่วนลด: </span>
+                            <span className="font-mono font-bold text-gold">{String(b.discountCode)}</span>
+                            <span className="text-white/40"> (ลด {Number(b.discountAmount).toLocaleString()} ฿)</span>
+                          </div>
+                        )}
+
                         {/* Documents */}
                         <div className="flex gap-2 flex-wrap">
                           {b.idCardImage && (
@@ -300,7 +333,7 @@ export default function AdminPage() {
                           )}
                         </div>
 
-                        {/* Actions */}
+                        {/* Status actions */}
                         <div className="flex flex-wrap gap-2">
                           {actions.map(({ next, label, icon: Icon }) => (
                             <Button
@@ -326,6 +359,43 @@ export default function AdminPage() {
                             </Button>
                           )}
                         </div>
+
+                        {/* Discount code section — shown for returned bookings */}
+                        {b.bookingStatus === 'returned' && (
+                          <div className="border-t border-white/5 pt-4">
+                            <p className="text-white/40 text-xs mb-2 flex items-center gap-1">
+                              <Gift size={11} /> โค้ดส่วนลด 10% สำหรับรีวิว
+                            </p>
+                            {existingCode ? (
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="flex-1 rounded-lg px-3 py-2 text-center font-mono font-bold text-base tracking-widest"
+                                  style={{ background: 'rgba(212,162,39,0.1)', border: '1px solid rgba(212,162,39,0.3)', color: '#d4a227' }}
+                                >
+                                  {existingCode}
+                                </div>
+                                <button
+                                  onClick={() => copyCode(existingCode)}
+                                  className="p-2 rounded-lg glass hover:bg-white/10 transition-colors"
+                                  title="คัดลอกโค้ด"
+                                >
+                                  {copied === existingCode ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} className="text-gold" />}
+                                </button>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                loading={codeLoading === b.bookingId}
+                                onClick={() => handleGenerateCode(b.bookingId)}
+                                className="border-gold/40 text-gold hover:bg-gold/10"
+                              >
+                                <Gift size={14} />
+                                ออกโค้ดส่วนลด
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}

@@ -10,10 +10,12 @@ const BOOKING_HEADERS = [
   'pickup_type', 'pickup_address', 'return_type', 'return_address',
   'customer_name', 'customer_phone', 'customer_ig',
   'id_card_url', 'ig_profile_url',
-  'payment_status', 'booking_status', 'admin_notes'
+  'payment_status', 'booking_status', 'admin_notes',
+  'discount_code', 'discount_amount',
 ]
 
 const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at']
+const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
 
 const CAMERA_NAMES = {
   IXY10s: 'Canon IXY 10s',
@@ -35,7 +37,6 @@ function getSpreadsheet() {
   if (ssId) {
     try { return SpreadsheetApp.openById(ssId) } catch (e) {}
   }
-  // Create new spreadsheet on first run
   const ss = SpreadsheetApp.create('MIWVIE SHOP — Bookings')
   props.setProperty('SPREADSHEET_ID', ss.getId())
   return ss
@@ -71,10 +72,11 @@ function json(data) {
 
 function handleGet(p) {
   switch (p.action) {
-    case 'setup':             return setupSheets()
-    case 'getAvailability':   return getAvailability(p.camera, p.month)
-    case 'getAllAvailability': return getAllAvailability(p.month)
-    case 'getBooking':        return getBookingById(p.id)
+    case 'setup':              return setupSheets()
+    case 'getAvailability':    return getAvailability(p.camera, p.month)
+    case 'getAllAvailability':  return getAllAvailability(p.month)
+    case 'getBooking':         return getBookingById(p.id)
+    case 'validateDiscountCode': return validateDiscountCode(p.code)
     default: return { error: 'Unknown action: ' + p.action }
   }
 }
@@ -83,10 +85,11 @@ function handleGet(p) {
 
 function handlePost(body) {
   switch (body.action) {
-    case 'createBooking':       return createBooking(body)
-    case 'getAdminBookings':    return getAdminBookings(body.pin)
-    case 'updateBookingStatus': return updateBookingStatus(body.bookingId, body.status, body.pin)
-    case 'blockDates':          return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
+    case 'createBooking':        return createBooking(body)
+    case 'getAdminBookings':     return getAdminBookings(body.pin)
+    case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
+    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
+    case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -99,12 +102,11 @@ function setupSheets() {
   if (!ss.getSheetByName('bookings')) {
     const s = ss.insertSheet('bookings')
     s.getRange(1, 1, 1, BOOKING_HEADERS.length).setValues([BOOKING_HEADERS])
-      .setBackground('#ff2d78').setFontColor('#ffffff').setFontWeight('bold')
+      .setBackground('#d4a227').setFontColor('#ffffff').setFontWeight('bold')
     s.setFrozenRows(1)
     s.setColumnWidth(1, 160)
     s.setColumnWidth(5, 180)
     s.setColumnWidth(6, 180)
-    // Remove default "Sheet1"
     const sheet1 = ss.getSheetByName('Sheet1')
     if (sheet1) ss.deleteSheet(sheet1)
   }
@@ -116,7 +118,15 @@ function setupSheets() {
     s.setFrozenRows(1)
   }
 
-  // Create Drive folder for documents
+  if (!ss.getSheetByName('discount_codes')) {
+    const s = ss.insertSheet('discount_codes')
+    s.getRange(1, 1, 1, DISCOUNT_HEADERS.length).setValues([DISCOUNT_HEADERS])
+      .setBackground('#b8860b').setFontColor('#ffffff').setFontWeight('bold')
+    s.setFrozenRows(1)
+    s.setColumnWidth(1, 140)
+    s.setColumnWidth(2, 160)
+  }
+
   const props = PropertiesService.getScriptProperties()
   let folderId = props.getProperty('DRIVE_FOLDER_ID')
   if (!folderId) {
@@ -174,7 +184,6 @@ function getAvailability(cameraId, month) {
     }
   }
 
-  // Add blocked slots
   if (blocked && blocked.getLastRow() > 1) {
     const bData = blocked.getDataRange().getValues()
     const bh = bData[0]
@@ -226,6 +235,16 @@ function createBooking(data) {
     }
   }
 
+  // Validate discount code if provided
+  let discountAmount = 0
+  if (data.discountCode) {
+    const validation = validateDiscountCode(data.discountCode)
+    if (!validation.valid) {
+      return { error: 'โค้ดส่วนลดไม่ถูกต้อง: ' + validation.error }
+    }
+    discountAmount = data.discountAmount || 0
+  }
+
   const bookingId = generateBookingId(sheet)
   const now = new Date().toISOString()
 
@@ -241,12 +260,21 @@ function createBooking(data) {
     data.returnType, data.returnAddress || '',
     data.customerName, data.customerPhone, data.customerIG || '',
     idCardUrl, igUrl,
-    'pending', 'pending', ''
+    'pending', 'pending', '',
+    data.discountCode || '', discountAmount,
   ])
 
-  // Highlight pending payment row
+  // Mark discount code as used
+  if (data.discountCode && discountAmount > 0) {
+    applyDiscountCode(data.discountCode, bookingId)
+  }
+
+  // Highlight pending row
   const lastRow = sheet.getLastRow()
   sheet.getRange(lastRow, 21).setBackground('#fef3c7')
+
+  // LINE notification
+  sendLineNotify(bookingId, data, discountAmount)
 
   return { success: true, bookingId }
 }
@@ -318,6 +346,9 @@ function updateBookingStatus(bookingId, status, pin) {
     if (status === 'cancelled') {
       sheet.getRange(i + 1, iStatus + 1).setBackground('#fee2e2')
     }
+    if (status === 'returned') {
+      sheet.getRange(i + 1, iStatus + 1).setBackground('#ede9fe')
+    }
     return { success: true }
   }
 
@@ -333,6 +364,124 @@ function blockDates(cameraId, start, end, reason, pin) {
   const id = 'BLK-' + Date.now()
   sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString()])
   return { success: true, id }
+}
+
+// ── Discount codes ───────────────────────────────────────────
+
+function generateDiscountCode(bookingId, pin) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+
+  const ss = getSpreadsheet()
+  let sheet = ss.getSheetByName('discount_codes')
+  if (!sheet) {
+    sheet = ss.insertSheet('discount_codes')
+    sheet.getRange(1, 1, 1, DISCOUNT_HEADERS.length).setValues([DISCOUNT_HEADERS])
+      .setBackground('#b8860b').setFontColor('#ffffff').setFontWeight('bold')
+    sheet.setFrozenRows(1)
+  }
+
+  // Return existing active code for this booking
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues()
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === bookingId && data[i][5] === 'active') {
+        return { code: data[i][0] }
+      }
+    }
+  }
+
+  // Generate new unique code: MIW-XXXXXX
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code
+  do {
+    code = 'MIW-'
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
+  } while (codeExists(sheet, code))
+
+  sheet.appendRow([code, bookingId, new Date().toISOString(), '', '', 'active'])
+  return { code }
+}
+
+function codeExists(sheet, code) {
+  if (sheet.getLastRow() < 2) return false
+  const data = sheet.getDataRange().getValues()
+  return data.slice(1).some(row => row[0] === code)
+}
+
+function validateDiscountCode(code) {
+  if (!code) return { valid: false, error: 'ไม่ได้ระบุโค้ด' }
+
+  const sheet = getSpreadsheet().getSheetByName('discount_codes')
+  if (!sheet || sheet.getLastRow() < 2) return { valid: false, error: 'ไม่พบโค้ดนี้' }
+
+  const data = sheet.getDataRange().getValues()
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] !== code) continue
+    if (data[i][5] === 'used') return { valid: false, error: 'โค้ดนี้ถูกใช้แล้ว' }
+    if (data[i][5] === 'expired') return { valid: false, error: 'โค้ดหมดอายุแล้ว' }
+    if (data[i][5] === 'active') return { valid: true, discount: 10 }
+  }
+  return { valid: false, error: 'ไม่พบโค้ดนี้' }
+}
+
+function applyDiscountCode(code, usedByBookingId) {
+  const sheet = getSpreadsheet().getSheetByName('discount_codes')
+  if (!sheet || sheet.getLastRow() < 2) return false
+
+  const data = sheet.getDataRange().getValues()
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === code && data[i][5] === 'active') {
+      sheet.getRange(i + 1, 4).setValue(usedByBookingId)
+      sheet.getRange(i + 1, 5).setValue(new Date().toISOString())
+      sheet.getRange(i + 1, 6).setValue('used').setBackground('#d1fae5')
+      return true
+    }
+  }
+  return false
+}
+
+// ── LINE Messaging API notification ─────────────────────────
+// Setup: Script Properties → LINE_CHANNEL_TOKEN + LINE_USER_ID
+// Get token: developers.line.biz → your channel → Messaging API → Channel access token
+// Get user ID: developers.line.biz → your channel → Basic settings → Your user ID
+
+function sendLineNotify(bookingId, data, discountAmount) {
+  const props = PropertiesService.getScriptProperties()
+  const token = props.getProperty('LINE_CHANNEL_TOKEN')
+  const userId = props.getProperty('LINE_USER_ID')
+  if (!token || !userId) return
+
+  const pickup = Utilities.formatDate(new Date(data.pickupDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
+  const ret = Utilities.formatDate(new Date(data.returnDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
+  const camName = CAMERA_NAMES[data.cameraId] || data.cameraId
+  const discount = discountAmount > 0 ? `\n🏷️ ส่วนลด: -${discountAmount} ฿ (${data.discountCode})` : ''
+
+  const msg = [
+    '📸 จองใหม่! ' + bookingId,
+    '📷 ' + camName,
+    '📅 รับ: ' + pickup + ' → คืน: ' + ret,
+    '👤 ' + data.customerName + ' | ' + data.customerPhone,
+    '💰 ' + data.totalAmount + ' ฿' + discount,
+    '🛵 รับ: ' + (data.pickupType === 'delivery' ? 'Delivery' : 'รับเอง') +
+       ' | คืน: ' + (data.returnType === 'delivery' ? 'Delivery' : 'คืนเอง'),
+  ].join('\n')
+
+  try {
+    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      payload: JSON.stringify({
+        to: userId,
+        messages: [{ type: 'text', text: msg }],
+      }),
+      muteHttpExceptions: true,
+    })
+  } catch (e) {
+    Logger.log('LINE notify error: ' + e.message)
+  }
 }
 
 // ── Image upload ─────────────────────────────────────────────
