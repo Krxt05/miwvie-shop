@@ -1,5 +1,35 @@
-import { BookedSlot, BookingFormData, Booking, CameraId } from '@/types'
+import { BookedSlot, BookingFormData, Booking, CameraId, DeliveryType, PaymentStatus, BookingStatus } from '@/types'
 import { calcPrice, calcDeliveryFee, getCameraById } from './cameras'
+
+// Apps Script ส่งมาเป็น snake_case → แปลงเป็น camelCase
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapBooking(r: Record<string, any>): Booking {
+  return {
+    bookingId:      String(r.booking_id ?? ''),
+    createdAt:      String(r.created_at ?? ''),
+    cameraId:       (r.camera_id as CameraId),
+    pickupDatetime: r.pickup_datetime as unknown as Date,
+    returnDatetime: r.return_datetime as unknown as Date,
+    durationHours:  Number(r.duration_hours) || 0,
+    price:          Number(r.price) || 0,
+    deliveryFee:    Number(r.delivery_fee) || 0,
+    totalAmount:    Number(r.total_amount) || 0,
+    pickupType:     (r.pickup_type as DeliveryType) || 'self',
+    pickupAddress:  String(r.pickup_address ?? ''),
+    returnType:     (r.return_type as DeliveryType) || 'self',
+    returnAddress:  String(r.return_address ?? ''),
+    customerName:   String(r.customer_name ?? ''),
+    customerPhone:  String(r.customer_phone ?? ''),
+    customerIG:     String(r.customer_ig ?? ''),
+    idCardImage:    String(r.id_card_url ?? ''),
+    igProfileImage: String(r.ig_profile_url ?? ''),
+    paymentStatus:  (r.payment_status as PaymentStatus) || 'pending',
+    bookingStatus:  (r.booking_status as BookingStatus) || 'pending',
+    adminNotes:     String(r.admin_notes ?? ''),
+    discountCode:   String(r.discount_code ?? ''),
+    discountAmount: Number(r.discount_amount) || 0,
+  }
+}
 
 const BASE = '/api/sheets'
 
@@ -75,13 +105,14 @@ export async function createBooking(form: BookingFormData): Promise<{ bookingId:
 
 export async function getBooking(bookingId: string): Promise<Booking | null> {
   const data = await get({ action: 'getBooking', id: bookingId })
-  return data.booking ?? null
+  if (!data.booking) return null
+  return mapBooking(data.booking)
 }
 
 export async function getAdminBookings(pin: string): Promise<Booking[] | null> {
   const data = await post({ action: 'getAdminBookings', pin })
   if (data.error) return null
-  return data.bookings ?? []
+  return (data.bookings ?? []).map(mapBooking)
 }
 
 export async function validateDiscountCode(code: string): Promise<{ valid: boolean; error?: string; discount?: number }> {
