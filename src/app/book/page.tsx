@@ -101,7 +101,10 @@ function BookPage() {
   function validateStep(): boolean {
     const errs: Record<string, string> = {}
     if (step === 0 && !cameraId) errs.camera = 'กรุณาเลือกกล้อง'
-    if (step === 1 && !pickupDatetime) errs.pickup = 'กรุณาเลือกวันและเวลารับ'
+    if (step === 1) {
+      if (!pickupDatetime) errs.pickup = 'กรุณาเลือกวันและเวลารับ'
+      else if (selectionConflict) errs.pickup = 'ช่วงเวลาที่เลือกซ้อนทับกับการจองอื่น กรุณาเลือกเวลาใหม่'
+    }
     if (step === 2) {
       if (pickupType === 'delivery' && !pickupAddress) errs.pickupAddr = 'กรุณาระบุที่อยู่รับ'
     }
@@ -158,6 +161,14 @@ function BookPage() {
   const price = camera ? calcPrice(camera.priceGroup, durationHours) : 0
   const deliveryFee = calcDeliveryFee(pickupType, returnType)
   const total = price + deliveryFee
+
+  const selectionConflict = !!(pickupDatetime && returnDatetime && cameraId) &&
+    bookedSlots.some((slot) => {
+      if (slot.cameraId !== cameraId) return false
+      const s = new Date(slot.pickupDatetime)
+      const e = new Date(slot.returnDatetime)
+      return pickupDatetime < e && returnDatetime > s
+    })
 
   return (
     <main className="min-h-screen bg-gradient-dark">
@@ -305,8 +316,17 @@ function BookPage() {
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-pink rounded-xl p-4 mt-4 space-y-2 text-sm"
+                    className="rounded-xl p-4 mt-4 space-y-2 text-sm"
+                    style={selectionConflict
+                      ? { background: 'rgba(220,50,80,0.12)', border: '1px solid rgba(220,50,80,0.35)' }
+                      : { background: 'rgba(212,162,39,0.08)', border: '1px solid rgba(212,162,39,0.2)' }
+                    }
                   >
+                    {selectionConflict && (
+                      <p className="text-pink font-semibold text-sm flex items-center gap-2">
+                        <span>⚠️</span> ช่วงเวลาซ้อนทับกับการจองอื่น กรุณาเลือกใหม่
+                      </p>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-white/50">รับ</span>
                       <span>{format(pickupDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
@@ -315,14 +335,18 @@ function BookPage() {
                       <span className="text-white/50">คืน</span>
                       <span>{format(returnDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
                     </div>
-                    <div className="flex justify-between font-semibold text-pink border-t border-white/10 pt-2">
-                      <span>ค่าเช่า</span>
-                      <span>{price.toLocaleString()} ฿</span>
-                    </div>
+                    {!selectionConflict && (
+                      <div className="flex justify-between font-semibold text-gold border-t border-white/10 pt-2">
+                        <span>ค่าเช่า</span>
+                        <span>{price.toLocaleString()} ฿</span>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
-                {errors.pickup && <p className="text-pink text-sm mt-2">{errors.pickup}</p>}
+                {errors.pickup && !selectionConflict && (
+                  <p className="text-pink text-sm mt-2">{errors.pickup}</p>
+                )}
               </div>
             )}
 
@@ -549,7 +573,13 @@ function BookPage() {
               </Button>
             )}
             {step < 4 ? (
-              <Button onClick={next} variant="primary" fullWidth={step === 0} className="flex-1">
+              <Button
+                onClick={next}
+                variant="primary"
+                fullWidth={step === 0}
+                className="flex-1"
+                disabled={step === 1 && selectionConflict}
+              >
                 ถัดไป <ChevronRight size={16} />
               </Button>
             ) : (

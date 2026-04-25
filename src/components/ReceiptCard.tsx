@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
-import { Download, Copy, ExternalLink, Check } from 'lucide-react'
+import { Copy, ExternalLink, Check, Camera } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
 import { CAMERAS, calcPrice, calcDeliveryFee } from '@/lib/cameras'
@@ -54,25 +54,6 @@ export default function ReceiptCard({ bookingId, form }: Props) {
     await navigator.clipboard.writeText(summaryText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  async function handleDownload() {
-    if (!receiptRef.current) return
-    const html2canvas = (await import('html2canvas')).default
-    const el = receiptRef.current
-    const prev = el.style.cssText
-    el.style.cssText += ';background:#120818 !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;'
-    const canvas = await html2canvas(el, {
-      background: '#120818',
-      scale: 2,
-      useCORS: true,
-      logging: false,
-    } as Parameters<typeof html2canvas>[1])
-    el.style.cssText = prev
-    const a = document.createElement('a')
-    a.href = canvas.toDataURL('image/png')
-    a.download = `miwvie-receipt-${bookingId}.png`
-    a.click()
   }
 
   function openIGDM() {
@@ -161,17 +142,21 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 
       {/* Action buttons */}
       <div className="flex flex-col gap-3 mt-4">
-        <Button onClick={handleDownload} variant="primary" fullWidth>
-          <Download size={16} />
-          บันทึกใบจอง
-        </Button>
+        {/* Screenshot instruction */}
+        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(212,162,39,0.1)', border: '1px solid rgba(212,162,39,0.25)' }}>
+          <Camera size={20} className="text-gold shrink-0 mt-0.5" />
+          <div>
+            <p className="text-gold font-semibold text-sm mb-0.5">แคปหน้าจอใบจองนี้</p>
+            <p className="text-white/50 text-xs leading-relaxed">ส่งรูปพร้อมสลิปการโอนเงินมาที่ IG เพื่อยืนยันการจอง</p>
+          </div>
+        </div>
         <Button onClick={handleCopy} variant="outline" fullWidth>
           {copied ? <Check size={16} /> : <Copy size={16} />}
           {copied ? 'คัดลอกแล้ว!' : 'คัดลอกข้อความ'}
         </Button>
-        <Button onClick={openIGDM} variant="ghost" fullWidth>
+        <Button onClick={openIGDM} variant="primary" fullWidth>
           <ExternalLink size={16} />
-          ส่งสลิปทาง IG DM
+          ส่งสลิปทาง IG @miwvie_shop
         </Button>
       </div>
     </div>

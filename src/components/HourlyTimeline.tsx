@@ -132,17 +132,25 @@ export default function HourlyTimeline({
 
               {/* Hour slots */}
               <div className="flex flex-1 gap-px">
-                {HOURS.map((h) => (
-                  <button
-                    key={h}
-                    title={`${format(day, 'd MMM')} ${String(h).padStart(2, '0')}:00`}
-                    className={clsx(
-                      'flex-1 h-8 rounded-sm border transition-all duration-150',
-                      getSlotClass(day, h),
-                    )}
-                    onClick={() => handleClick(day, h)}
-                  />
-                ))}
+                {HOURS.map((h) => {
+                  const busy = isBooked(day, h)
+                  const past = isPast(day, h)
+                  return (
+                    <button
+                      key={h}
+                      title={`${format(day, 'd MMM')} ${String(h).padStart(2, '0')}:00`}
+                      className={clsx(
+                        'flex-1 h-8 rounded-sm border transition-all duration-150 flex items-center justify-center',
+                        getSlotClass(day, h),
+                      )}
+                      onClick={() => handleClick(day, h)}
+                    >
+                      {busy && !past && (
+                        <span className="text-[9px] font-black leading-none select-none" style={{ color: 'rgba(255,100,120,0.9)' }}>✕</span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -150,17 +158,17 @@ export default function HourlyTimeline({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 text-xs text-white/50">
+      <div className="flex items-center gap-4 mt-3 text-xs text-white/50 flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm bg-emerald-500/30 border border-emerald-500/50" />
           ว่าง
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-pink/30 border border-pink/40" />
+          <span className="w-3 h-3 rounded-sm bg-pink/20 border border-pink/35 flex items-center justify-center text-[8px] font-black" style={{ color: 'rgba(255,100,120,0.9)' }}>✕</span>
           ถูกจอง
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-pink/50 border border-pink" />
+          <span className="w-3 h-3 rounded-sm bg-gold/30 border border-gold" />
           ที่เลือก
         </span>
       </div>
