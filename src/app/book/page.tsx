@@ -161,7 +161,7 @@ function BookPage() {
       setBookingId(id)
       setStep(5) // receipt step
     } catch (err) {
-      alert('เกิดข้อผิดพลาด กรุณาลองใหม่')
+      alert(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
     } finally {
       setSubmitting(false)
     }

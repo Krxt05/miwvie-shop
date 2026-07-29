@@ -158,8 +158,8 @@ export default function HourlyTimeline({
               >
                 <span>{format(day, 'd')}</span>
                 {status === 'free' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                {status === 'partial' && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
-                {status === 'full' && <span className="w-1.5 h-1.5 rounded-full bg-pink/60" />}
+                {status === 'partial' && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />}
+                {status === 'full' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
               </button>
             )
           })}
@@ -171,11 +171,11 @@ export default function HourlyTimeline({
             ว่างทั้งวัน
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
             ว่างบางช่วง
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-pink/60" />
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
             เต็ม
           </span>
         </div>
@@ -187,7 +187,7 @@ export default function HourlyTimeline({
           <p className="text-sm text-gray-500 mb-2">
             เลือกเวลารับ — {format(selectedDay, 'EEEE d MMMM yyyy', { locale: th })}
           </p>
-          <div className="max-h-80 overflow-y-auto rounded-xl border border-pink-100 divide-y divide-pink-100 bg-white">
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
             {HOURS.map((h) => {
               const busy = isBooked(selectedDay, h)
               const past = isPast(selectedDay, h)
@@ -198,30 +198,25 @@ export default function HourlyTimeline({
                   key={h}
                   onClick={() => handleHourClick(h)}
                   disabled={disabled}
+                  title={busy ? 'ถูกจองแล้ว' : past ? 'ผ่านไปแล้ว' : 'ว่าง'}
                   className={clsx(
-                    'w-full flex items-center justify-between px-4 py-3 text-sm transition-colors',
+                    'flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-medium transition-all',
                     selected
-                      ? 'bg-gold/20 text-gold'
+                      ? 'bg-pink text-white shadow-pink-glow-sm'
                       : disabled
-                      ? 'text-gray-300 cursor-not-allowed'
-                      : 'text-gray-700 hover:bg-emerald-50',
+                      ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                      : 'bg-white border border-emerald-100 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50',
                   )}
                 >
-                  <span>
-                    {String(h).padStart(2, '0')}:00 – {String((h + 1) % 24).padStart(2, '0')}:00
-                  </span>
+                  <span>{String(h).padStart(2, '0')}:00</span>
                   {selected ? (
-                    <span className="flex items-center gap-1 text-xs font-semibold">
-                      <Check size={14} /> เลือกแล้ว
-                    </span>
-                  ) : past ? (
-                    <span className="text-xs">ผ่านไปแล้ว</span>
+                    <Check size={12} />
                   ) : busy ? (
-                    <span className="flex items-center gap-1 text-xs text-pink/70">
-                      <XIcon size={12} /> ถูกจองแล้ว
-                    </span>
+                    <XIcon size={10} className="text-gray-300" />
+                  ) : !past ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   ) : (
-                    <span className="text-xs text-emerald-500">ว่าง</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-200" />
                   )}
                 </button>
               )

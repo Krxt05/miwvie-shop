@@ -96,9 +96,7 @@ export async function createBooking(form: BookingFormData): Promise<{ bookingId:
     totalAmount: discountedPrice + deliveryFee,
   })
   if (!data.bookingId) {
-    const d = new Date()
-    const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
-    return { bookingId: `MIW-${stamp}-${String(Math.floor(Math.random()*900)+100)}` }
+    throw new Error(data.error || 'จองไม่สำเร็จ กรุณาลองใหม่')
   }
   return data
 }
