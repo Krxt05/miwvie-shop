@@ -89,6 +89,7 @@ function handlePost(body) {
     case 'createBooking':        return createBooking(body)
     case 'getAdminBookings':     return getAdminBookings(body.pin)
     case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
+    case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
     case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
@@ -353,6 +354,23 @@ function updateBookingStatus(bookingId, status, pin) {
       sheet.getRange(i + 1, iStatus + 1).setBackground('#ede9fe')
     }
     return { success: true }
+  }
+
+  return { error: 'Booking not found' }
+}
+
+function deleteBooking(bookingId, pin) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet) return { error: 'Sheet not found' }
+
+  const data = sheet.getDataRange().getValues()
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(bookingId)) {
+      sheet.deleteRow(i + 1)
+      return { success: true }
+    }
   }
 
   return { error: 'Booking not found' }

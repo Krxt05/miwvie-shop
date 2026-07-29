@@ -16,6 +16,7 @@ import { Booking, BookingStatus, CameraId } from '@/types'
 import { CAMERAS } from '@/lib/cameras'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
+import BookingHeatmap from '@/components/BookingHeatmap'
 
 const STATUS_ACTIONS: Record<string, { next: BookingStatus; label: string; icon: React.ElementType }[]> = {
   pending: [{ next: 'confirmed', label: 'ยืนยันรับเงิน', icon: CheckCircle }],
@@ -164,6 +165,15 @@ export default function AdminPage() {
       .reduce((s, b) => s + Number(b.totalAmount), 0),
   }
 
+  const occupancyRows = [
+    ...bookings
+      .filter((b) => b.bookingStatus !== 'cancelled')
+      .map((b) => ({ cameraId: b.cameraId, start: String(b.pickupDatetime), end: String(b.returnDatetime) })),
+    ...blockedSlots
+      .filter((b) => b.cameraId !== 'ALL')
+      .map((b) => ({ cameraId: b.cameraId as CameraId, start: b.startDatetime, end: b.endDatetime })),
+  ]
+
   if (!authed) {
     return (
       <main className="min-h-screen bg-gradient-dark flex items-center justify-center px-4">
@@ -232,6 +242,11 @@ export default function AdminPage() {
               <p className="text-gray-400 text-xs mt-1">{s.label}</p>
             </div>
           ))}
+        </div>
+
+        {/* Heatmap */}
+        <div className="mb-4">
+          <BookingHeatmap rows={occupancyRows} />
         </div>
 
         {/* Manual booking / block dates */}
