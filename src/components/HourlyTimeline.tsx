@@ -12,15 +12,16 @@ import {
   isBefore,
   isSameDay,
   isSameMonth,
-  parseISO,
 } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { clsx } from 'clsx'
 import { BookedSlot, CameraId } from '@/types'
+import { hasCapacityConflict } from '@/lib/cameras'
 import { ChevronLeft, ChevronRight, Check, X as XIcon } from 'lucide-react'
 
 interface Props {
   cameraId: CameraId
+  quantity: number
   bookedSlots: BookedSlot[]
   onSelectPickup: (dt: Date) => void
   selectedPickup: Date | null
@@ -34,6 +35,7 @@ type DayStatus = 'free' | 'partial' | 'full' | 'past'
 
 export default function HourlyTimeline({
   cameraId,
+  quantity,
   bookedSlots,
   onSelectPickup,
   selectedPickup,
@@ -45,18 +47,15 @@ export default function HourlyTimeline({
     selectedPickup ? startOfDay(selectedPickup) : null,
   )
 
+  const relevantSlots = bookedSlots.filter((b) => b.cameraId === cameraId)
+
   function isBooked(day: Date, hour: number): boolean {
     const slotStart = new Date(day)
     slotStart.setHours(hour, 0, 0, 0)
     const slotEnd = new Date(slotStart)
     slotEnd.setHours(hour + 1, 0, 0, 0)
 
-    return bookedSlots.some((b) => {
-      if (b.cameraId !== cameraId) return false
-      const bStart = parseISO(b.pickupDatetime)
-      const bEnd = parseISO(b.returnDatetime)
-      return slotStart < bEnd && slotEnd > bStart
-    })
+    return hasCapacityConflict(relevantSlots, quantity, slotStart, slotEnd)
   }
 
   function isPast(day: Date, hour: number): boolean {
@@ -111,7 +110,7 @@ export default function HourlyTimeline({
           <button
             onClick={() => setViewMonth((m) => addMonths(m, -1))}
             disabled={prevMonthDisabled}
-            className="p-2 rounded-lg hover:bg-pink-50 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+            className="p-3 -m-1 rounded-lg hover:bg-pink-50 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
           >
             <ChevronLeft size={18} />
           </button>
@@ -120,7 +119,7 @@ export default function HourlyTimeline({
           </span>
           <button
             onClick={() => setViewMonth((m) => addMonths(m, 1))}
-            className="p-2 rounded-lg hover:bg-pink-50 transition-colors"
+            className="p-3 -m-1 rounded-lg hover:bg-pink-50 transition-colors"
           >
             <ChevronRight size={18} />
           </button>

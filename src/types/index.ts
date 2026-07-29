@@ -23,6 +23,7 @@ export interface Camera {
   moodImages: string[]
   priceGroup: PriceGroup
   color: string
+  quantity: number
 }
 
 export interface BookedSlot {

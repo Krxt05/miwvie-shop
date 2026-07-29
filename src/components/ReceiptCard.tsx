@@ -5,7 +5,7 @@ import { th } from 'date-fns/locale'
 import { ExternalLink, Camera } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, calcPrice, calcDeliveryFee } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
@@ -13,8 +13,6 @@ interface Props {
   bookingId: string
   form: BookingFormData
 }
-
-const PROMPTPAY = '0820409263'
 
 export default function ReceiptCard({ bookingId, form }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
@@ -30,7 +28,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
   useEffect(() => {
     async function genQR() {
       const QRCode = (await import('qrcode')).default
-      const payload = generatePromptPayPayload(PROMPTPAY, total)
+      const payload = generatePromptPayPayload(PROMPTPAY_NUMBER, total)
       const url = await QRCode.toDataURL(payload, {
         width: 160,
         margin: 1,
@@ -113,7 +111,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
             <div className="space-y-1">
               <p className="text-gray-500 text-[11px]">สแกนจ่ายผ่าน</p>
               <p className="text-gray-800 font-bold text-sm">PromptPay</p>
-              <p className="text-pink text-sm font-semibold">{PROMPTPAY}</p>
+              <p className="text-pink text-sm font-semibold">{PROMPTPAY_NUMBER}</p>
               <p className="text-gray-400 text-[10px]">ยอด {total.toLocaleString()} บาท</p>
             </div>
           </div>

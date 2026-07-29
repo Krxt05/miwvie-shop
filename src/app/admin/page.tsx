@@ -286,7 +286,7 @@ export default function AdminPage() {
                       <option key={c.id} value={c.id}>{c.shortName}</option>
                     ))}
                   </select>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">เริ่ม</label>
                       <input
@@ -442,7 +442,7 @@ export default function AdminPage() {
                     >
                       <div className="border-t border-pink-100 p-4 space-y-4">
                         {/* Detail grid */}
-                        <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                           <Detail label="ชื่อ" value={String(b.customerName)} />
                           <Detail label="โทร" value={String(b.customerPhone)} />
                           <Detail label="IG" value={String(b.customerIG) || '-'} />

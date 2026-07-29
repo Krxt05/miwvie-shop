@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { addHours, format, differenceInHours } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader } from 'lucide-react'
-import { CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee } from '@/lib/cameras'
+import { CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE } from '@/lib/cameras'
 import { getAvailability, createBooking, validateDiscountCode } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import ReceiptCard from '@/components/ReceiptCard'
@@ -54,6 +54,7 @@ function BookPage() {
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
+  const [customDays, setCustomDays] = useState(8)
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
 
@@ -75,6 +76,12 @@ function BookPage() {
   function handleDurationChange(hours: number) {
     setDurationHours(hours)
     if (pickupDatetime) setReturnDatetime(addHours(pickupDatetime, hours))
+  }
+
+  function handleCustomDaysChange(days: number) {
+    const clamped = Math.max(8, days)
+    setCustomDays(clamped)
+    handleDurationChange(clamped * 24)
   }
 
   async function compressImage(file: File, maxPx = 1200, quality = 0.75): Promise<string> {
@@ -189,13 +196,13 @@ function BookPage() {
   const deliveryFee = calcDeliveryFee(pickupType, returnType)
   const total = price - discountAmount + deliveryFee
 
-  const selectionConflict = !!(pickupDatetime && returnDatetime && cameraId) &&
-    bookedSlots.some((slot) => {
-      if (slot.cameraId !== cameraId) return false
-      const s = new Date(slot.pickupDatetime)
-      const e = new Date(slot.returnDatetime)
-      return pickupDatetime < e && returnDatetime > s
-    })
+  const selectionConflict = !!(pickupDatetime && returnDatetime && camera) &&
+    hasCapacityConflict(
+      bookedSlots.filter((slot) => slot.cameraId === cameraId),
+      camera!.quantity,
+      pickupDatetime!,
+      returnDatetime!,
+    )
 
   return (
     <main className="min-h-screen bg-gradient-dark">
@@ -354,24 +361,62 @@ function BookPage() {
                       <button
                         key={opt.hours}
                         onClick={() => handleDurationChange(opt.hours)}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                        className={`px-3 py-2 rounded-lg text-sm transition-all text-center ${
                           durationHours === opt.hours
                             ? 'bg-pink text-white'
                             : 'glass hover:border-pink-200 text-gray-500'
                         }`}
                       >
-                        {opt.label}
+                        <span className="block">{opt.label}</span>
+                        <span className={`block text-[11px] ${durationHours === opt.hours ? 'text-white/80' : 'text-gray-400'}`}>
+                          {calcPrice(camera.priceGroup, opt.hours).toLocaleString()}฿
+                        </span>
                       </button>
                     ))}
+
+                    {/* Extended rental beyond 7 days */}
+                    <div
+                      className={`flex items-center gap-1.5 rounded-lg pl-1.5 pr-1.5 py-1.5 transition-all ${
+                        durationHours > 168 ? 'bg-pink text-white' : 'glass hover:border-pink-200 text-gray-500'
+                      }`}
+                    >
+                      <button
+                        onClick={() => handleCustomDaysChange(customDays - 1)}
+                        disabled={customDays <= 8}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-sm shrink-0 disabled:opacity-30 disabled:cursor-not-allowed transition-all ${
+                          durationHours > 168 ? 'bg-white/20 hover:bg-white/30' : 'bg-white border border-pink-200 text-pink hover:bg-pink-50'
+                        }`}
+                      >
+                        −
+                      </button>
+                      <button
+                        onClick={() => handleCustomDaysChange(customDays)}
+                        className="text-center leading-tight px-1"
+                      >
+                        <span className="block">{customDays} วัน</span>
+                        <span className={`block text-[11px] ${durationHours > 168 ? 'text-white/80' : 'text-gray-400'}`}>
+                          {calcPrice(camera.priceGroup, customDays * 24).toLocaleString()}฿
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => handleCustomDaysChange(customDays + 1)}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-sm shrink-0 transition-all ${
+                          durationHours > 168 ? 'bg-white/20 hover:bg-white/30' : 'bg-pink text-white hover:bg-pink-light'
+                        }`}
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-3">
-                    นับ 24 ชม. จากเวลารับจริง
+                    นับ 24 ชม. จากเวลารับจริง · เกิน 7 วัน +{EXTRA_DAY_RATE[camera.priceGroup]}฿/วัน
                   </p>
                 </div>
 
                 {/* Timeline */}
                 <HourlyTimeline
                   cameraId={cameraId!}
+                  quantity={camera.quantity}
                   bookedSlots={bookedSlots}
                   onSelectPickup={handlePickupSelect}
                   selectedPickup={pickupDatetime}
@@ -426,12 +471,12 @@ function BookPage() {
                     selected={pickupType === 'self'}
                     onClick={() => setPickupType('self')}
                     title="รับเอง (ฟรี)"
-                    sub="หอพักเมธาเรสสิเดนท์ 3"
+                    sub="รับได้ที่หอพักเมธาเรสสิเดนท์ 3 ซอยวุ่นวาย"
                   />
                   <OptionCard
                     selected={pickupType === 'delivery'}
                     onClick={() => setPickupType('delivery')}
-                    title="Delivery +15฿"
+                    title="Delivery +20฿"
                     sub="ส่งถึงที่ในมมส."
                   />
                   {pickupType === 'delivery' && (
@@ -455,7 +500,7 @@ function BookPage() {
                   <OptionCard
                     selected={returnType === 'delivery'}
                     onClick={() => setReturnType('delivery')}
-                    title="ให้ร้านรับ +15฿"
+                    title="ให้ร้านรับ +20฿"
                     sub="มารับถึงที่ในมมส."
                   />
                 </Section>
@@ -497,7 +542,7 @@ function BookPage() {
                     error={errors.phone}
                   />
                   <Field
-                    label="IG / Facebook"
+                    label="ชื่อ IG หรือ Line ที่ใช้ทักเข้ามา"
                     value={customerIG}
                     onChange={setCustomerIG}
                     placeholder="@username"
@@ -568,7 +613,7 @@ function BookPage() {
                   </div>
 
                   <div>
-                    <p className="text-sm text-gray-500 mb-2">หน้าโปรไฟล์ IG / Facebook</p>
+                    <p className="text-sm text-gray-500 mb-2">แคปหน้าโปรไฟล์ IG หรือ Facebook ที่ระบุได้ว่าเป็นบุคคลเดียวกันบนบัตรประชาชน</p>
                     <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
                       igProfileImage ? 'border-pink/50 bg-pink/5' : 'border-pink-100 hover:border-pink-300'
                     }`}>
@@ -610,7 +655,7 @@ function BookPage() {
                   />
                   <SummaryRow
                     label="คืนเครื่อง"
-                    value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : 'ให้ร้านรับ +15฿'}
+                    value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : 'ให้ร้านรับ +20฿'}
                   />
                   <SummaryRow label="ชื่อ" value={customerName} />
                   <SummaryRow label="โทร" value={customerPhone} />

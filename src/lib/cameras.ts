@@ -11,6 +11,9 @@ export const ORIGINAL_PRICE_TABLES: Record<PriceGroup, PriceTable> = {
   B: { hourly6: 129, day1: 199, day2: 349, day3: 499, day4: 600, day5: 699, day6: 799, day7: 899 },
 }
 
+// Beyond 7 days, each extra day is charged flat on top of the 7-day price
+export const EXTRA_DAY_RATE: Record<PriceGroup, number> = { A: 100, B: 90 }
+
 export const CAMERAS: Camera[] = [
   {
     id: 'IXY10s',
@@ -20,6 +23,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy10s-1.jpg', '/mood/ixy10s-2.jpg', '/mood/ixy10s-3.jpg'],
     priceGroup: 'A',
     color: '#374151',
+    quantity: 1,
   },
   {
     id: 'IXY30s',
@@ -29,6 +33,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy30s-1.jpg', '/mood/ixy30s-2.jpg', '/mood/ixy30s-3.jpg'],
     priceGroup: 'A',
     color: '#6b7280',
+    quantity: 1,
   },
   {
     id: 'IXY930IS',
@@ -38,6 +43,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy930is-1.jpg', '/mood/ixy930is-2.jpg', '/mood/ixy930is-3.jpg'],
     priceGroup: 'A',
     color: '#b45309',
+    quantity: 2,
   },
   {
     id: 'IXY510IS',
@@ -47,6 +53,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/cameras/ixy510is.png', '/cameras/ixy510is.png', '/cameras/ixy510is.png'],
     priceGroup: 'A',
     color: '#a8a29e',
+    quantity: 1,
   },
   {
     id: 'IXY910IS',
@@ -56,6 +63,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy910is-1.jpg', '/mood/ixy910is-2.jpg', '/mood/ixy910is-3.jpg'],
     priceGroup: 'B',
     color: '#d1d5db',
+    quantity: 1,
   },
   {
     id: 'IXY200',
@@ -65,6 +73,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy200-1.jpg', '/mood/ixy200-2.jpg', '/mood/ixy200-3.jpg'],
     priceGroup: 'B',
     color: '#dc2626',
+    quantity: 1,
   },
 ]
 
@@ -82,14 +91,46 @@ export function calcPrice(priceGroup: PriceGroup, durationHours: number): number
   if (days === 4) return t.day4
   if (days === 5) return t.day5
   if (days === 6) return t.day6
-  return t.day7
+  if (days === 7) return t.day7
+  return t.day7 + (days - 7) * EXTRA_DAY_RATE[priceGroup]
 }
 
 export function calcDeliveryFee(pickupType: string, returnType: string): number {
-  const pickup = pickupType === 'delivery' ? 15 : 0
-  const ret = returnType === 'delivery' ? 15 : 0
+  const pickup = pickupType === 'delivery' ? 20 : 0
+  const ret = returnType === 'delivery' ? 20 : 0
   return pickup + ret
 }
 
+// Sweep-line: true if the number of slots overlapping at any point within
+// [rangeStart, rangeEnd) reaches quantity (all units taken at once).
+export function hasCapacityConflict(
+  slots: { pickupDatetime: string; returnDatetime: string }[],
+  quantity: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): boolean {
+  const rangeStartMs = rangeStart.getTime()
+  const rangeEndMs = rangeEnd.getTime()
+  const events: { t: number; delta: number }[] = []
+
+  for (const s of slots) {
+    const start = new Date(s.pickupDatetime).getTime()
+    const end = new Date(s.returnDatetime).getTime()
+    if (start < rangeEndMs && end > rangeStartMs) {
+      events.push({ t: Math.max(start, rangeStartMs), delta: 1 })
+      events.push({ t: Math.min(end, rangeEndMs), delta: -1 })
+    }
+  }
+
+  events.sort((a, b) => a.t - b.t || a.delta - b.delta)
+
+  let count = 0
+  for (const e of events) {
+    count += e.delta
+    if (count >= quantity) return true
+  }
+  return false
+}
+
 export const DELIVERY_LOCATION = 'หอพักเมธาเรสสิเดนท์ 3'
-export const PROMPTPAY_NUMBER = '0820409263'
+export const PROMPTPAY_NUMBER = '0981016683'

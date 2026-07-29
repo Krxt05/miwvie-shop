@@ -26,6 +26,15 @@ const CAMERA_NAMES = {
   IXY200: 'Canon IXY 200 (IXUS 185)'
 }
 
+const CAMERA_QUANTITY = {
+  IXY10s: 1,
+  IXY30s: 1,
+  IXY930IS: 2,
+  IXY510IS: 1,
+  IXY910IS: 1,
+  IXY200: 1
+}
+
 function getAdminPin() {
   return PropertiesService.getScriptProperties().getProperty('ADMIN_PIN') || '1234'
 }
@@ -149,6 +158,10 @@ function setupSheets() {
 
 // ── Availability ─────────────────────────────────────────────
 
+// After a customer returns a camera, keep it off the market for another
+// hour so the shop has time to charge the battery before the next rental.
+const BATTERY_CHARGE_BUFFER_MS = 60 * 60 * 1000
+
 function getAvailability(cameraId, month) {
   const ss = getSpreadsheet()
   const sheet = ss.getSheetByName('bookings')
@@ -175,7 +188,8 @@ function getAvailability(cameraId, month) {
       if (row[iStatus] === 'cancelled') continue
 
       const pickup = new Date(row[iPickup])
-      const ret = new Date(row[iReturn])
+      // Buffer only affects availability checks below, not the booking's own stored return time
+      const ret = new Date(new Date(row[iReturn]).getTime() + BATTERY_CHARGE_BUFFER_MS)
 
       if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
 
@@ -226,16 +240,28 @@ function createBooking(data) {
   const sheet = ss.getSheetByName('bookings')
   if (!sheet) return { error: 'Run setup first via ?action=setup' }
 
-  // Validate no conflict
+  // Validate capacity: count concurrent overlapping bookings/blocks
+  // (including admin blocks) against how many physical units this model has
   const existing = getAvailability(data.cameraId, null).slots
   const newPickup = new Date(data.pickupDatetime)
   const newReturn = new Date(data.returnDatetime)
+  const quantity = CAMERA_QUANTITY[data.cameraId] || 1
+
+  const events = []
   for (const slot of existing) {
-    if (slot.bookingId === 'blocked') continue
     const slotPickup = new Date(slot.pickupDatetime)
     const slotReturn = new Date(slot.returnDatetime)
-    if (newPickup < slotReturn && newReturn > slotPickup) {
-      return { error: 'กล้องรุ่นนี้ถูกจองในช่วงเวลาที่เลือกแล้ว' }
+    if (slotPickup < newReturn && slotReturn > newPickup) {
+      events.push({ t: Math.max(slotPickup.getTime(), newPickup.getTime()), delta: 1 })
+      events.push({ t: Math.min(slotReturn.getTime(), newReturn.getTime()), delta: -1 })
+    }
+  }
+  events.sort((a, b) => a.t - b.t || a.delta - b.delta)
+  let concurrent = 0
+  for (const e of events) {
+    concurrent += e.delta
+    if (concurrent >= quantity) {
+      return { error: 'กล้องรุ่นนี้ถูกจองเต็มจำนวนในช่วงเวลาที่เลือกแล้ว' }
     }
   }
 

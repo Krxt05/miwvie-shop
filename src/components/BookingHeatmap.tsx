@@ -36,16 +36,56 @@ const bangkokKey = (value: string | Date): string => {
   }).format(date)
 }
 
+const bangkokTime = (date: Date): string =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+
 interface Tooltip {
   x: number
   y: number
   lines: string[]
 }
 
+interface HeatRow {
+  key: string
+  label: string
+  busy: Set<string>
+  starts: Map<string, string[]>
+  ends: Map<string, string[]>
+}
+
 // Blue/orange — the most CVD-distinguishable pair, used here as an identity
 // pair (pickup vs return event) rather than for magnitude.
 const PICKUP_COLOR = '#2a78d6' // รับกล้อง (camera leaves the shop)
 const RETURN_COLOR = '#eb6834' // คืนกล้อง (camera comes back)
+
+// Cameras with more than one physical unit share a calendar, so a booking
+// doesn't say which specific unit it's on. Greedily assign each booking to
+// the first unit that's free (classic interval-partitioning), so the
+// heatmap can show separate rows per unit instead of merging them.
+function partitionByUnit(rows: OccupancyRow[], quantity: number): OccupancyRow[][] {
+  if (quantity <= 1) return [rows]
+  const sorted = [...rows].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  const slotEnds: number[] = Array(quantity).fill(-Infinity)
+  const buckets: OccupancyRow[][] = Array.from({ length: quantity }, () => [])
+  for (const r of sorted) {
+    const start = new Date(r.start).getTime()
+    const end = new Date(r.end).getTime()
+    let slot = slotEnds.findIndex((t) => t <= start)
+    if (slot === -1) {
+      // shouldn't happen if capacity was enforced at booking time, but fall
+      // back to the slot that frees up soonest rather than dropping data
+      slot = slotEnds.indexOf(Math.min(...slotEnds))
+    }
+    buckets[slot].push(r)
+    slotEnds[slot] = end
+  }
+  return buckets
+}
 
 export default function BookingHeatmap({ rows }: Props) {
   const [month, setMonth] = useState(new Date())
@@ -56,30 +96,45 @@ export default function BookingHeatmap({ rows }: Props) {
   const days = useMemo(() => eachDayOfInterval({ start: monthStart, end: monthEnd }), [monthStart, monthEnd])
   const todayKey = bangkokKey(new Date())
 
-  // Pre-index rows per camera → set of busy day-keys, plus start/end keys
-  const byCamera = useMemo(() => {
-    const map: Record<string, { busy: Set<string>; starts: Set<string>; ends: Set<string> }> = {}
-    for (const c of CAMERAS) map[c.id] = { busy: new Set(), starts: new Set(), ends: new Set() }
-    for (const r of rows) {
-      const entry = map[r.cameraId]
-      if (!entry || !r.start || !r.end) continue
-      const startDate = new Date(r.start)
-      const endDate = new Date(r.end)
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) continue
-      const startKey = bangkokKey(startDate)
-      const endKey = bangkokKey(endDate)
-      entry.starts.add(startKey)
-      entry.ends.add(endKey)
-      // walk day by day (bounded: rentals are short, never more than ~2 months)
-      let cursor = startDate
-      for (let i = 0; i < 60; i++) {
-        const key = bangkokKey(cursor)
-        entry.busy.add(key)
-        if (key >= endKey) break
-        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
-      }
+  const heatRows = useMemo(() => {
+    const result: HeatRow[] = []
+    for (const cam of CAMERAS) {
+      const camRows = rows.filter((r) => r.cameraId === cam.id)
+      const buckets = partitionByUnit(camRows, cam.quantity)
+      buckets.forEach((bucket, i) => {
+        const busy = new Set<string>()
+        const starts = new Map<string, string[]>()
+        const ends = new Map<string, string[]>()
+        for (const r of bucket) {
+          if (!r.start || !r.end) continue
+          const startDate = new Date(r.start)
+          const endDate = new Date(r.end)
+          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) continue
+          const startKey = bangkokKey(startDate)
+          const endKey = bangkokKey(endDate)
+          if (!starts.has(startKey)) starts.set(startKey, [])
+          starts.get(startKey)!.push(bangkokTime(startDate))
+          if (!ends.has(endKey)) ends.set(endKey, [])
+          ends.get(endKey)!.push(bangkokTime(endDate))
+          // walk day by day (bounded: rentals are short, never more than ~2 months)
+          let cursor = startDate
+          for (let j = 0; j < 60; j++) {
+            const key = bangkokKey(cursor)
+            busy.add(key)
+            if (key >= endKey) break
+            cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+          }
+        }
+        result.push({
+          key: `${cam.id}-${i}`,
+          label: cam.quantity > 1 ? `${cam.shortName} (${i + 1})` : cam.shortName,
+          busy,
+          starts,
+          ends,
+        })
+      })
     }
-    return map
+    return result
   }, [rows])
 
   const showTooltip = (e: React.SyntheticEvent, lines: string[]) => {
@@ -93,21 +148,23 @@ export default function BookingHeatmap({ rows }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-sm">ภาพรวมความว่าง (ทุกรุ่น)</h2>
         <div className="flex items-center gap-1">
-          <button onClick={() => setMonth(subMonths(month, 1))} className="p-1 hover:bg-pink-50 rounded-full text-pink">
+          <button onClick={() => setMonth(subMonths(month, 1))} className="p-2 -m-1 hover:bg-pink-50 rounded-full text-pink">
             <ChevronLeft size={16} />
           </button>
           <span className="text-xs font-medium text-gray-500 w-24 text-center">{format(month, 'MMMM yyyy', { locale: th })}</span>
-          <button onClick={() => setMonth(addMonths(month, 1))} className="p-1 hover:bg-pink-50 rounded-full text-pink">
+          <button onClick={() => setMonth(addMonths(month, 1))} className="p-2 -m-1 hover:bg-pink-50 rounded-full text-pink">
             <ChevronRight size={16} />
           </button>
         </div>
       </div>
 
+      <p className="text-[11px] text-gray-400 sm:hidden">← เลื่อนดูซ้าย-ขวาเพื่อดูทั้งเดือน →</p>
+
       <div className="overflow-x-auto">
-        <div style={{ minWidth: days.length * 24 + 88 }}>
+        <div style={{ minWidth: days.length * 24 + 104 }}>
           {/* day-of-month header */}
           <div className="flex">
-            <div className="w-20 shrink-0" />
+            <div className="w-24 shrink-0" />
             {days.map((d) => (
               <div
                 key={d.toISOString()}
@@ -118,62 +175,61 @@ export default function BookingHeatmap({ rows }: Props) {
             ))}
           </div>
 
-          {CAMERAS.map((cam) => {
-            const entry = byCamera[cam.id]
-            return (
-              <div key={cam.id} className="flex items-center h-7">
-                <div className="w-20 shrink-0 text-xs text-gray-600 font-medium truncate pr-1">
-                  {cam.shortName}
-                </div>
-                {days.map((d) => {
-                  const key = bangkokKey(d)
-                  const isToday = key === todayKey
-                  const isBusy = entry.busy.has(key)
-                  const isStart = entry.starts.has(key)
-                  const isEnd = entry.ends.has(key)
-
-                  let cellClass = 'w-6 h-6 shrink-0 border-t border-b border-white '
-                  let cellStyle: React.CSSProperties | undefined
-                  if (isStart && isEnd) {
-                    // same day: one booking returns and another (or the same) picks up — split the cell
-                    cellClass += 'rounded-md '
-                    cellStyle = { background: `linear-gradient(to right, ${RETURN_COLOR} 50%, ${PICKUP_COLOR} 50%)` }
-                  } else if (isStart) {
-                    cellClass += 'rounded-l-md '
-                    cellStyle = { background: PICKUP_COLOR }
-                  } else if (isEnd) {
-                    cellClass += 'rounded-r-md '
-                    cellStyle = { background: RETURN_COLOR }
-                  } else if (isBusy) {
-                    cellClass += 'bg-red-200 '
-                  } else {
-                    cellClass += 'bg-emerald-50 '
-                  }
-                  if (isToday) cellClass += 'ring-2 ring-pink ring-inset z-10 '
-
-                  const lines = [
-                    `${cam.shortName} — ${format(d, 'd MMM yyyy', { locale: th })}`,
-                    isBusy ? 'ไม่ว่าง' : 'ว่าง',
-                  ]
-                  if (isEnd) lines.push('คืนกล้องวันนี้')
-                  if (isStart) lines.push('รับกล้องวันนี้')
-
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={cellClass}
-                      style={cellStyle}
-                      onMouseEnter={(e) => showTooltip(e, lines)}
-                      onFocus={(e) => showTooltip(e, lines)}
-                      onMouseLeave={hideTooltip}
-                      onBlur={hideTooltip}
-                    />
-                  )
-                })}
+          {heatRows.map((hr) => (
+            <div key={hr.key} className="flex items-center h-7">
+              <div className="w-24 shrink-0 text-xs text-gray-600 font-medium truncate pr-1">
+                {hr.label}
               </div>
-            )
-          })}
+              {days.map((d) => {
+                const key = bangkokKey(d)
+                const isToday = key === todayKey
+                const isBusy = hr.busy.has(key)
+                const startTimes = hr.starts.get(key)
+                const endTimes = hr.ends.get(key)
+                const isStart = !!startTimes
+                const isEnd = !!endTimes
+
+                let cellClass = 'w-6 h-6 shrink-0 border-t border-b border-white '
+                let cellStyle: React.CSSProperties | undefined
+                if (isStart && isEnd) {
+                  // same day: one booking returns and another (or the same) picks up — split the cell
+                  cellClass += 'rounded-md '
+                  cellStyle = { background: `linear-gradient(to right, ${RETURN_COLOR} 50%, ${PICKUP_COLOR} 50%)` }
+                } else if (isStart) {
+                  cellClass += 'rounded-l-md '
+                  cellStyle = { background: PICKUP_COLOR }
+                } else if (isEnd) {
+                  cellClass += 'rounded-r-md '
+                  cellStyle = { background: RETURN_COLOR }
+                } else if (isBusy) {
+                  cellClass += 'bg-red-200 '
+                } else {
+                  cellClass += 'bg-emerald-50 '
+                }
+                if (isToday) cellClass += 'ring-2 ring-pink ring-inset z-10 '
+
+                const lines = [
+                  `${hr.label} — ${format(d, 'd MMM yyyy', { locale: th })}`,
+                  isBusy ? 'ไม่ว่าง' : 'ว่าง',
+                ]
+                if (endTimes) lines.push(`คืนกล้อง ${endTimes.join(', ')} น.`)
+                if (startTimes) lines.push(`รับกล้อง ${startTimes.join(', ')} น.`)
+
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={cellClass}
+                    style={cellStyle}
+                    onMouseEnter={(e) => showTooltip(e, lines)}
+                    onFocus={(e) => showTooltip(e, lines)}
+                    onMouseLeave={hideTooltip}
+                    onBlur={hideTooltip}
+                  />
+                )
+              })}
+            </div>
+          ))}
         </div>
       </div>
 

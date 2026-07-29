@@ -16,7 +16,7 @@ const playfair = Playfair_Display({
 
 export const metadata: Metadata = {
   title: 'MIWVIE SHOP — เช่ากล้องดิจิตอล มมส.',
-  description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก ส่งทั่วประเทศ',
+  description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก',
   icons: {
     icon: '/logo.png',
     apple: '/logo.png',
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'MIWVIE SHOP',
-    description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก ส่งทั่วประเทศ',
+    description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก',
     images: ['/og.jpg'],
   },
 }

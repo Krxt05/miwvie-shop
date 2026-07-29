@@ -32,12 +32,12 @@ export default function Home() {
       </div>
 
       {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
-        <div className="flex items-center gap-3">
+      <nav className="relative z-10 flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-4 max-w-5xl mx-auto">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="p-[2px] rounded-full shrink-0" style={{ background: 'linear-gradient(135deg, #D63384, #FF69B4, #FFB6C1)' }}>
             <Image src="/logo.png" alt="MIWVIE SHOP" width={40} height={40} className="rounded-full block" />
           </div>
-          <span className="font-display text-xl font-bold text-gradient">MIWVIE SHOP</span>
+          <span className="font-display text-lg sm:text-xl font-bold text-gradient">MIWVIE SHOP</span>
         </div>
         <a
           href="https://www.instagram.com/miwvie_shop/"
@@ -83,17 +83,17 @@ export default function Home() {
           </motion.h1>
 
           <motion.p variants={FADE_UP} className="text-gray-500 text-lg mb-8 max-w-md mx-auto">
-            Canon IXY ราคาถูก นับ 24 ชม. จากเวลารับจริง ส่งทั่วประเทศ
+            Canon IXY ราคาถูก นับ 24 ชม. จากเวลารับจริง
           </motion.p>
           <motion.div variants={FADE_UP} className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/book">
-              <Button size="lg">
+            <Link href="/book" className="w-full sm:w-auto">
+              <Button size="lg" fullWidth>
                 จองเลย
                 <ChevronRight size={18} />
               </Button>
             </Link>
-            <a href="https://www.instagram.com/miwvie_shop/" target="_blank">
-              <Button size="lg" variant="outline">
+            <a href="https://www.instagram.com/miwvie_shop/" target="_blank" className="w-full sm:w-auto">
+              <Button size="lg" variant="outline" fullWidth>
                 <Instagram size={18} />
                 ดูรีวิว
               </Button>
@@ -107,7 +107,7 @@ export default function Home() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { icon: Clock, label: 'นับ 24 ชม.', sub: 'จากเวลารับจริง' },
-            { icon: Truck, label: 'ส่งทั่วมมส.', sub: 'แค่ 15 บาท' },
+            { icon: Truck, label: 'ส่งทั่วมมส.', sub: 'แค่ 20 บาท' },
             { icon: Shield, label: 'ปลอดภัย', sub: 'มีหลักฐานการเช่า' },
             { icon: Star, label: 'รีวิวรับส่วนลด', sub: '10% ทุกครั้ง' },
           ].map(({ icon: Icon, label, sub }) => (
@@ -238,7 +238,7 @@ export default function Home() {
         </div>
 
         <p className="text-center text-gray-400 text-xs mt-6">
-          Delivery ทั่วมมส. เที่ยวละ 15฿ · รีวิวรับส่วนลด 10%
+          Delivery ทั่วมมส. เที่ยวละ 20฿ · รีวิวรับส่วนลด 10%
         </p>
       </section>
 
