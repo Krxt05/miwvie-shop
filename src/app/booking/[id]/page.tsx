@@ -14,19 +14,19 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
   pending: {
     icon: Clock,
     label: 'รอยืนยันการชำระ',
-    color: 'text-yellow-400',
+    color: 'text-amber-600',
     sub: 'กรุณาโอนเงินและส่งสลิปมาที่ @miwvie_shop',
   },
   confirmed: {
     icon: CheckCircle,
     label: 'ยืนยันแล้ว',
-    color: 'text-blue-400',
+    color: 'text-blue-600',
     sub: 'การจองได้รับการยืนยัน รอรับกล้องตามนัด',
   },
   active: {
     icon: Package,
     label: 'กำลังเช่าอยู่',
-    color: 'text-emerald-400',
+    color: 'text-emerald-600',
     sub: 'กล้องอยู่กับคุณแล้ว อย่าลืมส่งคืนตรงเวลา',
   },
   returned: {
@@ -38,7 +38,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
   cancelled: {
     icon: XCircle,
     label: 'ยกเลิกแล้ว',
-    color: 'text-red-400',
+    color: 'text-red-600',
     sub: 'การจองนี้ถูกยกเลิก',
   },
 }
@@ -72,7 +72,7 @@ export default function BookingStatusPage() {
       <div className="relative z-10 max-w-lg mx-auto px-4 py-8">
         <button
           onClick={() => router.push('/')}
-          className="flex items-center gap-1 text-white/40 hover:text-white text-sm mb-8 transition-colors"
+          className="flex items-center gap-1 text-gray-400 hover:text-pink-600 text-sm mb-8 transition-colors"
         >
           <ChevronLeft size={16} /> หน้าหลัก
         </button>
@@ -80,7 +80,7 @@ export default function BookingStatusPage() {
         {loading && (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="w-10 h-10 border-2 border-pink/30 border-t-pink rounded-full animate-spin" />
-            <p className="text-white/40 text-sm">กำลังโหลด...</p>
+            <p className="text-gray-400 text-sm">กำลังโหลด...</p>
           </div>
         )}
 
@@ -88,7 +88,7 @@ export default function BookingStatusPage() {
           <div className="text-center py-20">
             <p className="text-4xl mb-4">🔍</p>
             <h2 className="text-xl font-bold mb-2">ไม่พบการจอง</h2>
-            <p className="text-white/40 text-sm mb-6">Booking ID: {id}</p>
+            <p className="text-gray-400 text-sm mb-6">Booking ID: {id}</p>
             <Button onClick={() => router.push('/book')} variant="primary">
               จองใหม่
             </Button>
@@ -107,14 +107,14 @@ export default function BookingStatusPage() {
                 <StatusIcon size={32} className={status.color} />
               </div>
               <Badge label={status.label} variant={booking.bookingStatus as any} />
-              <p className="text-white/50 text-sm mt-2">{status.sub}</p>
+              <p className="text-gray-500 text-sm mt-2">{status.sub}</p>
             </div>
 
             {/* Booking details */}
             <div className="glass rounded-2xl p-5 space-y-3">
               <div className="flex items-center justify-between mb-1">
                 <h2 className="font-bold">รายละเอียดการจอง</h2>
-                <span className="text-xs text-white/30 font-mono">{booking.bookingId}</span>
+                <span className="text-xs text-gray-400 font-mono">{booking.bookingId}</span>
               </div>
 
               <Row label="กล้อง" value={String(booking.cameraId)} />
@@ -143,7 +143,7 @@ export default function BookingStatusPage() {
                 value={booking.returnType === 'self' ? 'คืนเอง (ฟรี)' : 'ให้ร้านรับ'}
               />
 
-              <div className="border-t border-white/10 pt-3 flex justify-between font-bold text-pink">
+              <div className="border-t border-pink-100 pt-3 flex justify-between font-bold text-pink">
                 <span>ยอดชำระ</span>
                 <span>{Number(booking.totalAmount).toLocaleString()} ฿</span>
               </div>
@@ -152,11 +152,11 @@ export default function BookingStatusPage() {
             {/* Payment reminder if pending */}
             {booking.bookingStatus === 'pending' && (
               <div className="glass rounded-2xl p-5 space-y-3">
-                <h3 className="font-semibold text-yellow-400 flex items-center gap-2">
+                <h3 className="font-semibold text-amber-600 flex items-center gap-2">
                   <Clock size={16} /> รอการชำระเงิน
                 </h3>
-                <p className="text-white/50 text-sm">
-                  โอนเงิน <strong className="text-white">{Number(booking.totalAmount).toLocaleString()} บาท</strong> ผ่าน PromptPay แล้วส่งสลิปมาที่ IG DM
+                <p className="text-gray-500 text-sm">
+                  โอนเงิน <strong className="text-gray-800">{Number(booking.totalAmount).toLocaleString()} บาท</strong> ผ่าน PromptPay แล้วส่งสลิปมาที่ IG DM
                 </p>
                 <Button
                   onClick={() => window.open('https://www.instagram.com/miwvie_shop/', '_blank')}
@@ -171,7 +171,7 @@ export default function BookingStatusPage() {
             {/* Refresh */}
             <button
               onClick={load}
-              className="flex items-center gap-2 text-white/30 hover:text-white/60 text-xs mx-auto transition-colors"
+              className="flex items-center gap-2 text-gray-400 hover:text-gray-500 text-xs mx-auto transition-colors"
             >
               <RefreshCw size={12} /> รีเฟรชสถานะ
             </button>
@@ -185,8 +185,8 @@ export default function BookingStatusPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2 text-sm">
-      <span className="text-white/50 shrink-0">{label}</span>
-      <span className="text-right text-white/80">{value}</span>
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className="text-right text-gray-700">{value}</span>
     </div>
   )
 }

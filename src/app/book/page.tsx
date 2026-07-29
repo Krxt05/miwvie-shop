@@ -20,7 +20,9 @@ const DURATION_OPTIONS = [
   { hours: 24, label: '1 วัน' },
   { hours: 48, label: '2 วัน' },
   { hours: 72, label: '3 วัน' },
+  { hours: 96, label: '4 วัน' },
   { hours: 120, label: '5 วัน' },
+  { hours: 144, label: '6 วัน' },
   { hours: 168, label: '7 วัน' },
 ]
 
@@ -51,6 +53,7 @@ function BookPage() {
   const [bookingId, setBookingId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null)
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
 
@@ -196,6 +199,23 @@ function BookPage() {
 
   return (
     <main className="min-h-screen bg-gradient-dark">
+      {/* Lightbox */}
+      {zoomedImage && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setZoomedImage(null)}
+        >
+          <button
+            className="absolute top-6 right-6 text-white bg-white/20 p-2 rounded-full hover:bg-white/40 transition-colors"
+            onClick={() => setZoomedImage(null)}
+          >
+            <X size={24} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoomedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" alt="ตัวอย่างภาพ" />
+        </div>
+      )}
+
       {/* Glow */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-40 -left-40 w-96 h-96 bg-pink/10 rounded-full blur-[120px]" />
@@ -205,7 +225,7 @@ function BookPage() {
         {/* Back to home */}
         <button
           onClick={() => router.push('/')}
-          className="flex items-center gap-2 text-white/40 hover:text-white text-sm mb-6 transition-colors"
+          className="flex items-center gap-2 text-gray-400 hover:text-pink-600 text-sm mb-6 transition-colors"
         >
           <Image src="/logo.png" alt="" width={28} height={28} className="rounded-full opacity-70" />
           หน้าหลัก
@@ -222,20 +242,20 @@ function BookPage() {
                       ? 'bg-pink text-white'
                       : i === step
                       ? 'bg-pink text-white shadow-pink-glow-sm'
-                      : 'bg-white/10 text-white/30'
+                      : 'bg-gray-200 text-gray-400'
                   }`}
                 >
                   {i + 1}
                 </div>
                 <span
                   className={`text-xs whitespace-nowrap ${
-                    i === step ? 'text-white' : 'text-white/30'
+                    i === step ? 'text-gray-800' : 'text-gray-400'
                   }`}
                 >
                   {s}
                 </span>
                 {i < STEPS.length - 1 && (
-                  <div className={`h-px w-4 ${i < step ? 'bg-pink' : 'bg-white/10'}`} />
+                  <div className={`h-px w-4 ${i < step ? 'bg-pink' : 'bg-gray-200'}`} />
                 )}
               </div>
             ))}
@@ -262,7 +282,7 @@ function BookPage() {
                       className={`glass rounded-xl p-4 flex items-center gap-4 text-left transition-all ${
                         cameraId === cam.id
                           ? 'border-pink shadow-pink-glow-sm'
-                          : 'hover:border-white/20'
+                          : 'hover:border-pink-200'
                       }`}
                     >
                       <div className="w-16 h-12 shrink-0 flex items-center justify-center" style={{ background: `${cam.color}18`, borderRadius: 8 }}>
@@ -270,7 +290,7 @@ function BookPage() {
                       </div>
                       <div className="flex-1">
                         <p className="font-semibold">{cam.name}</p>
-                        <p className="text-white/40 text-sm">
+                        <p className="text-gray-400 text-sm">
                           เริ่ม {PRICE_TABLES[cam.priceGroup]?.day1 ?? 0} ฿/วัน
                         </p>
                       </div>
@@ -278,7 +298,7 @@ function BookPage() {
                         className={`w-5 h-5 rounded-full border-2 transition-all ${
                           cameraId === cam.id
                             ? 'border-pink bg-pink'
-                            : 'border-white/20'
+                            : 'border-pink-200'
                         }`}
                       />
                     </button>
@@ -298,15 +318,37 @@ function BookPage() {
                   </div>
                   <div>
                     <p className="font-bold">{camera.name}</p>
-                    <p className="text-white/40 text-sm">เริ่ม {PRICE_TABLES[camera.priceGroup].day1} ฿/วัน</p>
+                    <p className="text-gray-400 text-sm">เริ่ม {PRICE_TABLES[camera.priceGroup].day1} ฿/วัน</p>
                   </div>
                 </div>
+
+                {/* Mood board */}
+                {camera.moodImages.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-widest mb-2">
+                      ตัวอย่างภาพจากกล้องนี้
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {camera.moodImages.map((img, idx) => (
+                        <button
+                          key={img + idx}
+                          onClick={() => setZoomedImage(img)}
+                          className="aspect-square rounded-xl overflow-hidden border border-pink-100 bg-pink-50 cursor-zoom-in transition-transform hover:scale-[1.03] active:scale-95"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img} alt={`${camera.name} ${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <h1 className="text-2xl font-bold mb-2">เลือกวันและเวลา</h1>
-                <p className="text-white/40 text-sm mb-6">คลิกช่องสีเขียวเพื่อเลือกเวลารับกล้อง</p>
+                <p className="text-gray-400 text-sm mb-6">เลือกวันที่จากปฏิทิน แล้วเลือกเวลาจากรายการด้านล่าง</p>
 
                 {/* Duration */}
                 <div className="glass rounded-xl p-4 mb-5">
-                  <p className="text-sm text-white/60 mb-3">ระยะเวลาเช่า</p>
+                  <p className="text-sm text-gray-500 mb-3">ระยะเวลาเช่า</p>
                   <div className="flex flex-wrap gap-2">
                     {DURATION_OPTIONS.map((opt) => (
                       <button
@@ -315,14 +357,14 @@ function BookPage() {
                         className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                           durationHours === opt.hours
                             ? 'bg-pink text-white'
-                            : 'glass hover:border-white/20 text-white/60'
+                            : 'glass hover:border-pink-200 text-gray-500'
                         }`}
                       >
                         {opt.label}
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-white/30 mt-3">
+                  <p className="text-xs text-gray-400 mt-3">
                     นับ 24 ชม. จากเวลารับจริง
                   </p>
                 </div>
@@ -342,8 +384,8 @@ function BookPage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="rounded-xl p-4 mt-4 space-y-2 text-sm"
                     style={selectionConflict
-                      ? { background: 'rgba(220,50,80,0.12)', border: '1px solid rgba(220,50,80,0.35)' }
-                      : { background: 'rgba(212,162,39,0.08)', border: '1px solid rgba(212,162,39,0.2)' }
+                      ? { background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }
+                      : { background: 'rgba(214,51,132,0.06)', border: '1px solid rgba(214,51,132,0.18)' }
                     }
                   >
                     {selectionConflict && (
@@ -352,15 +394,15 @@ function BookPage() {
                       </p>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-white/50">รับ</span>
+                      <span className="text-gray-500">รับ</span>
                       <span>{format(pickupDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-white/50">คืน</span>
+                      <span className="text-gray-500">คืน</span>
                       <span>{format(returnDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
                     </div>
                     {!selectionConflict && (
-                      <div className="flex justify-between font-semibold text-gold border-t border-white/10 pt-2">
+                      <div className="flex justify-between font-semibold text-gold border-t border-pink-100 pt-2">
                         <span>ค่าเช่า</span>
                         <span>{calcPrice(camera!.priceGroup, durationHours).toLocaleString()} ฿</span>
                       </div>
@@ -394,7 +436,7 @@ function BookPage() {
                   />
                   {pickupType === 'delivery' && (
                     <input
-                      className="w-full glass rounded-xl px-4 py-3 text-sm outline-none focus:border-pink placeholder:text-white/30 mt-2"
+                      className="w-full glass rounded-xl px-4 py-3 text-sm outline-none focus:border-pink placeholder:text-gray-400 mt-2"
                       placeholder="ระบุที่อยู่ (หอ/อาคาร/ห้อง)"
                       value={pickupAddress}
                       onChange={(e) => setPickupAddress(e.target.value)}
@@ -419,15 +461,15 @@ function BookPage() {
                 </Section>
 
                 <div className="glass rounded-xl p-4 mt-5 text-sm space-y-1">
-                  <div className="flex justify-between text-white/60">
+                  <div className="flex justify-between text-gray-500">
                     <span>ค่าเช่า</span><span>{price.toLocaleString()} ฿</span>
                   </div>
                   {deliveryFee > 0 && (
-                    <div className="flex justify-between text-white/60">
+                    <div className="flex justify-between text-gray-500">
                       <span>ค่าจัดส่ง</span><span>+{deliveryFee} ฿</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-bold text-pink border-t border-white/10 pt-2">
+                  <div className="flex justify-between font-bold text-pink border-t border-pink-100 pt-2">
                     <span>รวม</span><span>{total.toLocaleString()} ฿</span>
                   </div>
                 </div>
@@ -462,9 +504,9 @@ function BookPage() {
                   />
 
                   <div>
-                    <p className="text-sm text-white/60 mb-2">บัตรประชาชน * <span className="text-white/30">(สามารถปิดเลขบัตรได้)</span></p>
+                    <p className="text-sm text-gray-500 mb-2">บัตรประชาชน * <span className="text-gray-400">(สามารถปิดเลขบัตรได้)</span></p>
                     <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
-                      idCardImage ? 'border-pink/50 bg-pink/5' : 'border-white/15 hover:border-white/30'
+                      idCardImage ? 'border-pink/50 bg-pink/5' : 'border-pink-100 hover:border-pink-300'
                     }`}>
                       {idCardImage ? (
                         <div className="relative w-full h-full">
@@ -479,8 +521,8 @@ function BookPage() {
                         </div>
                       ) : (
                         <>
-                          <Upload size={20} className="text-white/30 mb-2" />
-                          <span className="text-white/40 text-sm">อัปโหลดรูปบัตร</span>
+                          <Upload size={20} className="text-gray-400 mb-2" />
+                          <span className="text-gray-400 text-sm">อัปโหลดรูปบัตร</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'id')} />
                         </>
                       )}
@@ -490,8 +532,8 @@ function BookPage() {
 
                   {/* Discount code */}
                   <div>
-                    <p className="text-sm text-white/60 mb-2 flex items-center gap-1">
-                      <Tag size={13} /> โค้ดส่วนลด <span className="text-white/30">(ถ้ามี)</span>
+                    <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                      <Tag size={13} /> โค้ดส่วนลด <span className="text-gray-400">(ถ้ามี)</span>
                     </p>
                     <div className="relative">
                       <input
@@ -506,19 +548,19 @@ function BookPage() {
                         }}
                         onBlur={() => checkDiscountCode(discountCode)}
                         placeholder="MIW-XXXXXX"
-                        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors font-mono tracking-widest placeholder:text-white/25 placeholder:font-sans placeholder:tracking-normal ${
+                        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors font-mono tracking-widest placeholder:text-gray-300 placeholder:font-sans placeholder:tracking-normal ${
                           discountStatus === 'valid' ? 'border-emerald-500/50' :
                           discountStatus === 'invalid' ? 'border-pink/50' : 'focus:border-gold/40'
                         }`}
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        {discountStatus === 'checking' && <Loader size={16} className="text-white/40 animate-spin" />}
-                        {discountStatus === 'valid' && <CheckIcon size={16} className="text-emerald-400" />}
+                        {discountStatus === 'checking' && <Loader size={16} className="text-gray-400 animate-spin" />}
+                        {discountStatus === 'valid' && <CheckIcon size={16} className="text-emerald-500" />}
                         {discountStatus === 'invalid' && <X size={16} className="text-pink" />}
                       </div>
                     </div>
                     {discountStatus === 'valid' && (
-                      <p className="text-emerald-400 text-xs mt-1">✓ ส่วนลด 10% ({discountAmount.toLocaleString()} ฿) ถูกนำไปใช้แล้ว</p>
+                      <p className="text-emerald-500 text-xs mt-1">✓ ส่วนลด 10% ({discountAmount.toLocaleString()} ฿) ถูกนำไปใช้แล้ว</p>
                     )}
                     {discountStatus === 'invalid' && (
                       <p className="text-pink text-xs mt-1">{discountError}</p>
@@ -526,9 +568,9 @@ function BookPage() {
                   </div>
 
                   <div>
-                    <p className="text-sm text-white/60 mb-2">หน้าโปรไฟล์ IG / Facebook</p>
+                    <p className="text-sm text-gray-500 mb-2">หน้าโปรไฟล์ IG / Facebook</p>
                     <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
-                      igProfileImage ? 'border-pink/50 bg-pink/5' : 'border-white/15 hover:border-white/30'
+                      igProfileImage ? 'border-pink/50 bg-pink/5' : 'border-pink-100 hover:border-pink-300'
                     }`}>
                       {igProfileImage ? (
                         <div className="relative w-full h-full">
@@ -543,8 +585,8 @@ function BookPage() {
                         </div>
                       ) : (
                         <>
-                          <Upload size={20} className="text-white/30 mb-2" />
-                          <span className="text-white/40 text-sm">อัปโหลดหน้าโปรไฟล์</span>
+                          <Upload size={20} className="text-gray-400 mb-2" />
+                          <span className="text-gray-400 text-sm">อัปโหลดหน้าโปรไฟล์</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'ig')} />
                         </>
                       )}
@@ -572,17 +614,17 @@ function BookPage() {
                   />
                   <SummaryRow label="ชื่อ" value={customerName} />
                   <SummaryRow label="โทร" value={customerPhone} />
-                  <div className="border-t border-white/10 pt-3 space-y-1">
-                    <div className="flex justify-between text-white/60">
+                  <div className="border-t border-pink-100 pt-3 space-y-1">
+                    <div className="flex justify-between text-gray-500">
                       <span>ค่าเช่า</span><span>{calcPrice(camera!.priceGroup, durationHours).toLocaleString()} ฿</span>
                     </div>
                     {discountAmount > 0 && (
-                      <div className="flex justify-between text-emerald-400">
+                      <div className="flex justify-between text-emerald-500">
                         <span>ส่วนลด 10% ({discountCode})</span><span>-{discountAmount.toLocaleString()} ฿</span>
                       </div>
                     )}
                     {deliveryFee > 0 && (
-                      <div className="flex justify-between text-white/60">
+                      <div className="flex justify-between text-gray-500">
                         <span>ค่าจัดส่ง</span><span>+{deliveryFee} ฿</span>
                       </div>
                     )}
@@ -591,7 +633,7 @@ function BookPage() {
                     </div>
                   </div>
                 </div>
-                <p className="text-white/40 text-xs text-center mb-4">
+                <p className="text-gray-400 text-xs text-center mb-4">
                   กดยืนยันเพื่อรับใบจองพร้อม QR PromptPay
                 </p>
               </div>
@@ -601,11 +643,11 @@ function BookPage() {
             {step === 5 && bookingId && camera && pickupDatetime && returnDatetime && (
               <div>
                 <div className="text-center mb-6">
-                  <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-emerald-400 text-2xl">✓</span>
+                  <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-emerald-500 text-2xl">✓</span>
                   </div>
                   <h1 className="text-2xl font-bold mb-1">จองสำเร็จ!</h1>
-                  <p className="text-white/40 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
+                  <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
                 </div>
                 <ReceiptCard
                   bookingId={bookingId}
@@ -665,7 +707,7 @@ function BookPage() {
 function Section({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <p className="text-sm text-white/60 mb-3">{title}</p>
+      <p className="text-sm text-gray-500 mb-3">{title}</p>
       <div className="space-y-2">{children}</div>
     </div>
   )
@@ -676,14 +718,14 @@ function OptionCard({ selected, onClick, title, sub }: { selected: boolean; onCl
     <button
       onClick={onClick}
       className={`w-full glass rounded-xl p-4 flex items-center justify-between text-left transition-all ${
-        selected ? 'border-pink shadow-pink-glow-sm' : 'hover:border-white/20'
+        selected ? 'border-pink shadow-pink-glow-sm' : 'hover:border-pink-200'
       }`}
     >
       <div>
         <p className="font-medium text-sm">{title}</p>
-        <p className="text-white/40 text-xs mt-0.5">{sub}</p>
+        <p className="text-gray-400 text-xs mt-0.5">{sub}</p>
       </div>
-      <div className={`w-5 h-5 rounded-full border-2 transition-all shrink-0 ${selected ? 'border-pink bg-pink' : 'border-white/20'}`} />
+      <div className={`w-5 h-5 rounded-full border-2 transition-all shrink-0 ${selected ? 'border-pink bg-pink' : 'border-pink-200'}`} />
     </button>
   )
 }
@@ -694,13 +736,13 @@ function Field({ label, value, onChange, placeholder, type = 'text', error }: {
 }) {
   return (
     <div>
-      <label className="text-sm text-white/60 block mb-1">{label}</label>
+      <label className="text-sm text-gray-500 block mb-1">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder:text-white/25 ${
+        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder:text-gray-300 ${
           error ? 'border-pink/60' : 'focus:border-pink/50'
         }`}
       />
@@ -712,7 +754,7 @@ function Field({ label, value, onChange, placeholder, type = 'text', error }: {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-white/50 shrink-0">{label}</span>
+      <span className="text-gray-500 shrink-0">{label}</span>
       <span className="text-right text-sm">{value}</span>
     </div>
   )

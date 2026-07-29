@@ -131,3 +131,51 @@ export async function updateBookingStatus(
 ): Promise<{ success?: boolean; error?: string }> {
   return post({ action: 'updateBookingStatus', bookingId, status, pin })
 }
+
+export interface BlockedSlot {
+  id: string
+  cameraId: CameraId | 'ALL'
+  startDatetime: string
+  endDatetime: string
+  reason: string
+  createdAt: string
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapBlockedSlot(r: Record<string, any>): BlockedSlot {
+  return {
+    id: String(r.id ?? ''),
+    cameraId: (r.camera_id as CameraId | 'ALL') ?? 'ALL',
+    startDatetime: String(r.start_datetime ?? ''),
+    endDatetime: String(r.end_datetime ?? ''),
+    reason: String(r.reason ?? ''),
+    createdAt: String(r.created_at ?? ''),
+  }
+}
+
+export async function blockDates(
+  cameraId: CameraId | 'ALL',
+  start: Date,
+  end: Date,
+  reason: string,
+  pin: string,
+): Promise<{ success?: boolean; id?: string; error?: string }> {
+  return post({
+    action: 'blockDates',
+    cameraId,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    reason,
+    pin,
+  })
+}
+
+export async function listBlockedSlots(pin: string): Promise<BlockedSlot[] | null> {
+  const data = await post({ action: 'listBlockedSlots', pin })
+  if (data.error) return null
+  return (data.slots ?? []).map(mapBlockedSlot)
+}
+
+export async function deleteBlockedSlot(id: string, pin: string): Promise<{ success?: boolean; error?: string }> {
+  return post({ action: 'deleteBlockedSlot', id, pin })
+}

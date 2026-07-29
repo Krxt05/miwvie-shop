@@ -6,13 +6,13 @@ interface Props {
 }
 
 const styles: Record<string, string> = {
-  available: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  busy: 'bg-pink/20 text-pink-light border-pink/30',
-  pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  confirmed: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  returned: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  cancelled: 'bg-red-500/20 text-red-400 border-red-500/30',
+  available: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+  busy: 'bg-pink-50 text-pink-600 border-pink-200',
+  pending: 'bg-amber-50 text-amber-600 border-amber-200',
+  confirmed: 'bg-blue-50 text-blue-600 border-blue-200',
+  active: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+  returned: 'bg-gray-100 text-gray-500 border-gray-200',
+  cancelled: 'bg-red-50 text-red-600 border-red-200',
 }
 
 export default function Badge({ label, variant = 'available' }: Props) {

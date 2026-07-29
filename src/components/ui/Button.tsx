@@ -49,8 +49,8 @@ export default function Button({
           'disabled:opacity-40 disabled:cursor-not-allowed',
         ],
         variant === 'ghost' && [
-          'text-white/70',
-          'hover:text-white hover:bg-white/5',
+          'text-gray-500',
+          'hover:text-pink-600 hover:bg-pink-50',
           'active:scale-95',
         ],
         className,

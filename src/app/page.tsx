@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Instagram, ChevronRight, Clock, Truck, Shield, Star } from 'lucide-react'
-import { CAMERAS, PRICE_TABLES } from '@/lib/cameras'
+import { CAMERAS, PRICE_TABLES, ORIGINAL_PRICE_TABLES } from '@/lib/cameras'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 
@@ -34,7 +34,7 @@ export default function Home() {
       {/* Nav */}
       <nav className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
         <div className="flex items-center gap-3">
-          <div className="p-[2px] rounded-full shrink-0" style={{ background: 'linear-gradient(135deg, #d4a227, #f0d060, #c9a020)' }}>
+          <div className="p-[2px] rounded-full shrink-0" style={{ background: 'linear-gradient(135deg, #D63384, #FF69B4, #FFB6C1)' }}>
             <Image src="/logo.png" alt="MIWVIE SHOP" width={40} height={40} className="rounded-full block" />
           </div>
           <span className="font-display text-xl font-bold text-gradient">MIWVIE SHOP</span>
@@ -42,7 +42,7 @@ export default function Home() {
         <a
           href="https://www.instagram.com/miwvie_shop/"
           target="_blank"
-          className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-pink transition-colors"
         >
           <Instagram size={18} />
           @miwvie_shop
@@ -55,7 +55,7 @@ export default function Home() {
           <motion.div variants={FADE_UP} className="flex justify-center mb-6">
             <div
               className="p-[3px] rounded-full animate-pulse-pink"
-              style={{ background: 'linear-gradient(135deg, #d4a227, #f0d060, #c9a020, #d4a227)' }}
+              style={{ background: 'linear-gradient(135deg, #D63384, #FF69B4, #FFB6C1, #D63384)' }}
             >
               <Image
                 src="/logo.png"
@@ -63,7 +63,7 @@ export default function Home() {
                 width={140}
                 height={140}
                 className="rounded-full block"
-                style={{ filter: 'drop-shadow(0 0 20px rgba(212,162,39,0.6)) drop-shadow(0 0 40px rgba(224,90,140,0.25))' }}
+                style={{ filter: 'drop-shadow(0 0 16px rgba(214,51,132,0.35)) drop-shadow(0 0 32px rgba(255,105,180,0.2))' }}
               />
             </div>
           </motion.div>
@@ -82,7 +82,7 @@ export default function Home() {
             <span className="text-gradient">สวยทุกช็อต</span>
           </motion.h1>
 
-          <motion.p variants={FADE_UP} className="text-white/50 text-lg mb-8 max-w-md mx-auto">
+          <motion.p variants={FADE_UP} className="text-gray-500 text-lg mb-8 max-w-md mx-auto">
             Canon IXY ราคาถูก นับ 24 ชม. จากเวลารับจริง ส่งทั่วประเทศ
           </motion.p>
           <motion.div variants={FADE_UP} className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -113,8 +113,8 @@ export default function Home() {
           ].map(({ icon: Icon, label, sub }) => (
             <div key={label} className="glass rounded-2xl p-4 text-center">
               <Icon size={24} className="text-pink mx-auto mb-2" />
-              <p className="font-semibold text-sm">{label}</p>
-              <p className="text-white/40 text-xs mt-0.5">{sub}</p>
+              <p className="font-semibold text-sm text-gray-700">{label}</p>
+              <p className="text-gray-400 text-xs mt-0.5">{sub}</p>
             </div>
           ))}
         </div>
@@ -123,7 +123,7 @@ export default function Home() {
       {/* Camera grid */}
       <section className="relative z-10 px-6 pb-20 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold">กล้องทั้งหมด</h2>
+          <h2 className="text-2xl font-bold text-gray-800">กล้องทั้งหมด</h2>
           <Link href="/book" className="text-pink text-sm hover:text-pink-light transition-colors">
             จองเลย →
           </Link>
@@ -160,12 +160,12 @@ export default function Home() {
                     </div>
 
                     <div className="p-4">
-                      <h3 className="font-semibold mb-1">{cam.name}</h3>
+                      <h3 className="font-semibold mb-1 text-gray-800">{cam.name}</h3>
                       <div className="flex items-baseline gap-1 mb-3">
                         <span className="text-pink font-bold text-lg">{prices.day1}</span>
-                        <span className="text-white/40 text-xs">฿ / วัน</span>
+                        <span className="text-gray-400 text-xs">฿ / วัน</span>
                       </div>
-                      <div className="flex justify-between text-xs text-white/40">
+                      <div className="flex justify-between text-xs text-gray-400">
                         <span>6 ชม. {prices.hourly6}฿</span>
                         <span>7 วัน {prices.day7}฿</span>
                       </div>
@@ -180,42 +180,71 @@ export default function Home() {
 
       {/* Pricing table */}
       <section className="relative z-10 px-6 pb-20 max-w-5xl mx-auto">
-        <h2 className="text-2xl font-bold mb-8 text-center">ตารางราคา</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-white/40 text-left">
-                <th className="pb-4 pr-4">ระยะเวลา</th>
-                <th className="pb-4 pr-4 text-center">กลุ่ม A<br /><span className="text-white/30 font-normal text-xs">IXY 10s / 30s / 930 IS</span></th>
-                <th className="pb-4 text-center">กลุ่ม B<br /><span className="text-white/30 font-normal text-xs">IXY 910 IS / 200</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {[
-                ['6 ชั่วโมง', 149, 129],
-                ['1 วัน', 249, 199],
-                ['2 วัน', 449, 349],
-                ['3 วัน', 649, 499],
-                ['5 วัน', 849, 699],
-                ['7 วัน', 999, 899],
-              ].map(([label, a, b]) => (
-                <tr key={String(label)} className="hover:bg-white/2 transition-colors">
-                  <td className="py-3 pr-4 text-white/70">{label}</td>
-                  <td className="py-3 pr-4 text-center font-semibold text-pink">{a} ฿</td>
-                  <td className="py-3 text-center font-semibold text-pink">{b} ฿</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="text-center mb-8">
+          <span className="inline-block bg-pink text-white text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1 rounded-full mb-3">
+            โปรโมชั่น
+          </span>
+          <h2 className="text-2xl font-bold text-gray-800">ตารางราคา</h2>
         </div>
-        <p className="text-center text-white/30 text-xs mt-4">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {(['A', 'B'] as const).map((group) => {
+            const promo = PRICE_TABLES[group]
+            const original = ORIGINAL_PRICE_TABLES[group]
+            const rows: [string, string, keyof typeof promo][] = [
+              ['6 ชั่วโมง', '6 Hours', 'hourly6'],
+              ['1 วัน', '1 Day', 'day1'],
+              ['2 วัน', '2 Days', 'day2'],
+              ['3 วัน', '3 Days', 'day3'],
+              ['4 วัน', '4 Days', 'day4'],
+              ['5 วัน', '5 Days', 'day5'],
+              ['6 วัน', '6 Days', 'day6'],
+              ['7 วัน', '7 Days', 'day7'],
+            ]
+            return (
+              <div
+                key={group}
+                className="bg-white rounded-2xl border border-pink-100 shadow-xl shadow-pink-100 overflow-hidden"
+              >
+                <div className="px-6 pt-5 pb-4 text-center border-b border-pink-100">
+                  <span className="inline-block bg-pink-500 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-2">
+                    Group {group}
+                  </span>
+                  <p className="text-gray-500 text-xs">
+                    {group === 'A' ? 'Canon IXY 10s · 30s · 930 IS · 510 IS' : 'Canon IXUS 185 · IXY 910 IS'}
+                  </p>
+                </div>
+                <div className="divide-y divide-pink-50 px-6">
+                  {rows.map(([th, en, key]) => (
+                    <div key={key} className="flex items-center justify-between py-3">
+                      <div>
+                        <p className="font-bold text-gray-800 text-sm">{th}</p>
+                        <p className="text-gray-400 text-[11px]">{en}</p>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-gray-300 text-xs line-through">{original[key]}฿</span>
+                        <span className="text-pink-600 font-display font-bold text-2xl">
+                          {promo[key]}
+                          <span className="text-sm ml-0.5">฿</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="h-5" />
+              </div>
+            )
+          })}
+        </div>
+
+        <p className="text-center text-gray-400 text-xs mt-6">
           Delivery ทั่วมมส. เที่ยวละ 15฿ · รีวิวรับส่วนลด 10%
         </p>
       </section>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-white/5 px-6 py-8 text-center text-white/30 text-xs">
-        <p className="font-display text-base text-white/60 mb-1">MIWVIE SHOP</p>
+      <footer className="relative z-10 border-t border-pink-100 px-6 py-8 text-center text-gray-400 text-xs">
+        <p className="font-display text-base text-pink-600 mb-1">MIWVIE SHOP</p>
         <p>มหาสารคาม มมส. ซอยวุ่นวาย · @miwvie_shop</p>
         <p className="mt-2">© 2024 Miwvie Shop Digital Rental</p>
       </footer>

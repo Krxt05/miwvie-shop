@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  --pink: #e05a8c;
-  --pink-light: #f090b4;
-  --gold: #d4a227;
-  --gold-light: #e8c050;
-  --bg: #09060e;
+  --pink: #d63384;
+  --pink-light: #ff69b4;
+  --gold: #c2185b;
+  --gold-light: #d63384;
+  --bg: #fff0f5;
 }
 
 * {
@@ -16,8 +16,8 @@
 }
 
 body {
-  background: var(--bg);
-  color: #fff;
+  background: linear-gradient(180deg, #fff0f5 0%, #f8c8dc 100%);
+  color: #4a2c3a;
   font-family: var(--font-noto), sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -29,58 +29,55 @@ body {
 }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(212, 162, 39, 0.35);
+  background: rgba(214, 51, 132, 0.3);
   border-radius: 2px;
 }
 
 @layer utilities {
   .glass {
-    background: rgba(255, 255, 255, 0.04);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #ffffff;
+    border: 1px solid rgba(214, 51, 132, 0.12);
+    box-shadow: 0 4px 16px rgba(214, 51, 132, 0.08);
   }
   .glass-pink {
-    background: rgba(224, 90, 140, 0.08);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(212, 162, 39, 0.2);
+    background: #fff0f5;
+    border: 1px solid rgba(214, 51, 132, 0.18);
   }
   .text-gradient {
-    background: linear-gradient(135deg, #d4a227, #e05a8c);
+    background: linear-gradient(135deg, #d63384, #ff69b4);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .text-gradient-gold {
-    background: linear-gradient(135deg, #e8c050, #d4a227, #b8860b);
+    background: linear-gradient(135deg, #c2185b, #d63384, #ff1493);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .slot-available {
-    background: rgba(0, 230, 118, 0.15);
-    border-color: rgba(0, 230, 118, 0.3);
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
   }
   .slot-available:hover {
-    background: rgba(0, 230, 118, 0.3);
-    border-color: rgba(0, 230, 118, 0.6);
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.5);
     cursor: pointer;
   }
   .slot-busy {
-    background: rgba(224, 90, 140, 0.2);
-    border-color: rgba(224, 90, 140, 0.35);
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
     cursor: not-allowed;
   }
   .slot-selected {
-    background: rgba(212, 162, 39, 0.3);
-    border-color: #d4a227;
-    box-shadow: 0 0 8px rgba(212, 162, 39, 0.5);
+    background: rgba(214, 51, 132, 0.15);
+    border-color: #d63384;
+    box-shadow: 0 0 0 1px rgba(214, 51, 132, 0.3);
   }
   .slot-past {
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.05);
     cursor: not-allowed;
-    opacity: 0.4;
+    opacity: 0.5;
   }
 }

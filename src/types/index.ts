@@ -1,4 +1,4 @@
-export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY910IS' | 'IXY200'
+export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY510IS' | 'IXY910IS' | 'IXY200'
 export type PriceGroup = 'A' | 'B'
 
 export interface PriceTable {
@@ -6,7 +6,9 @@ export interface PriceTable {
   day1: number
   day2: number
   day3: number
+  day4: number
   day5: number
+  day6: number
   day7: number
 }
 export type DeliveryType = 'self' | 'delivery'
@@ -21,15 +23,6 @@ export interface Camera {
   moodImages: string[]
   priceGroup: PriceGroup
   color: string
-}
-
-export interface PriceTable {
-  hourly6: number
-  day1: number
-  day2: number
-  day3: number
-  day5: number
-  day7: number
 }
 
 export interface BookedSlot {

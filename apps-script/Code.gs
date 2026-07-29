@@ -21,6 +21,7 @@ const CAMERA_NAMES = {
   IXY10s: 'Canon IXY 10s',
   IXY30s: 'Canon IXY 30s',
   IXY930IS: 'Canon IXY 930 IS',
+  IXY510IS: 'Canon IXY 510 IS',
   IXY910IS: 'Canon IXY 910 IS',
   IXY200: 'Canon IXY 200 (IXUS 185)'
 }
@@ -89,6 +90,8 @@ function handlePost(body) {
     case 'getAdminBookings':     return getAdminBookings(body.pin)
     case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
     case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
+    case 'listBlockedSlots':     return listBlockedSlots(body.pin)
+    case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
     default: return { error: 'Unknown action: ' + body.action }
   }
@@ -364,6 +367,43 @@ function blockDates(cameraId, start, end, reason, pin) {
   const id = 'BLK-' + Date.now()
   sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString()])
   return { success: true, id }
+}
+
+function listBlockedSlots(pin) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+
+  const sheet = getSpreadsheet().getSheetByName('blocked_slots')
+  if (!sheet || sheet.getLastRow() < 2) return { slots: [] }
+
+  const data = sheet.getDataRange().getValues()
+  const headers = data[0]
+  const slots = []
+
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue
+    const s = {}
+    headers.forEach((h, j) => { s[h] = data[i][j] })
+    slots.push(s)
+  }
+
+  return { slots: slots.reverse() }
+}
+
+function deleteBlockedSlot(id, pin) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+
+  const sheet = getSpreadsheet().getSheetByName('blocked_slots')
+  if (!sheet) return { error: 'Sheet not found' }
+
+  const data = sheet.getDataRange().getValues()
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) {
+      sheet.deleteRow(i + 1)
+      return { success: true }
+    }
+  }
+
+  return { error: 'Not found' }
 }
 
 // ── Discount codes ───────────────────────────────────────────
