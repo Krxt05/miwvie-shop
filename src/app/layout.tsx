@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'MIWVIE SHOP',
     description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก',
-    images: ['/og.jpg'],
+    images: ['/logo.png'],
   },
 }
 

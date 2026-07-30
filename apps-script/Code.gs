@@ -528,17 +528,28 @@ function applyDiscountCode(code, usedByBookingId) {
 // Setup: Script Properties → LINE_CHANNEL_TOKEN + LINE_USER_ID
 // Get token: developers.line.biz → your channel → Messaging API → Channel access token
 // Get user ID: developers.line.biz → your channel → Basic settings → Your user ID
+// LINE_USER_ID supports multiple recipients: comma-separated user IDs
 
 function sendLineNotify(bookingId, data, discountAmount) {
   const props = PropertiesService.getScriptProperties()
   const token = props.getProperty('LINE_CHANNEL_TOKEN')
-  const userId = props.getProperty('LINE_USER_ID')
-  if (!token || !userId) return
+  const userIds = (props.getProperty('LINE_USER_ID') || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id)
+  if (!token || userIds.length === 0) return
 
   const pickup = Utilities.formatDate(new Date(data.pickupDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
   const ret = Utilities.formatDate(new Date(data.returnDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
   const camName = CAMERA_NAMES[data.cameraId] || data.cameraId
   const discount = discountAmount > 0 ? `\n🏷️ ส่วนลด: -${discountAmount} ฿ (${data.discountCode})` : ''
+
+  const pickupLine = '🛵 รับ: ' + (data.pickupType === 'delivery'
+    ? 'Delivery → ' + (data.pickupAddress || '(ไม่ระบุที่อยู่)')
+    : 'รับเอง')
+  const returnLine = '📦 คืน: ' + (data.returnType === 'delivery'
+    ? 'Delivery → ' + (data.returnAddress || '(ไม่ระบุที่อยู่)')
+    : 'คืนเอง')
 
   const msg = [
     '📸 จองใหม่! ' + bookingId,
@@ -546,23 +557,29 @@ function sendLineNotify(bookingId, data, discountAmount) {
     '📅 รับ: ' + pickup + ' → คืน: ' + ret,
     '👤 ' + data.customerName + ' | ' + data.customerPhone,
     '💰 ' + data.totalAmount + ' ฿' + discount,
-    '🛵 รับ: ' + (data.pickupType === 'delivery' ? 'Delivery' : 'รับเอง') +
-       ' | คืน: ' + (data.returnType === 'delivery' ? 'Delivery' : 'คืนเอง'),
+    pickupLine,
+    returnLine,
   ].join('\n')
 
+  // Single recipient uses push; 2+ recipients use multicast
+  const endpoint = userIds.length === 1
+    ? 'https://api.line.me/v2/bot/message/push'
+    : 'https://api.line.me/v2/bot/message/multicast'
+  const payload = userIds.length === 1
+    ? { to: userIds[0], messages: [{ type: 'text', text: msg }] }
+    : { to: userIds, messages: [{ type: 'text', text: msg }] }
+
   try {
-    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+    const res = UrlFetchApp.fetch(endpoint, {
       method: 'post',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + token,
       },
-      payload: JSON.stringify({
-        to: userId,
-        messages: [{ type: 'text', text: msg }],
-      }),
+      payload: JSON.stringify(payload),
       muteHttpExceptions: true,
     })
+    Logger.log('LINE notify response ' + res.getResponseCode() + ': ' + res.getContentText())
   } catch (e) {
     Logger.log('LINE notify error: ' + e.message)
   }

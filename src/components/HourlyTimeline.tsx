@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   addDays,
   addMonths,
@@ -26,6 +26,7 @@ interface Props {
   onSelectPickup: (dt: Date) => void
   selectedPickup: Date | null
   durationHours: number
+  onMonthChange?: (year: number, month: number) => void
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -40,12 +41,18 @@ export default function HourlyTimeline({
   onSelectPickup,
   selectedPickup,
   durationHours,
+  onMonthChange,
 }: Props) {
   const today = startOfDay(new Date())
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()))
   const [selectedDay, setSelectedDay] = useState<Date | null>(
     selectedPickup ? startOfDay(selectedPickup) : null,
   )
+
+  useEffect(() => {
+    onMonthChange?.(viewMonth.getFullYear(), viewMonth.getMonth() + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMonth])
 
   const relevantSlots = bookedSlots.filter((b) => b.cameraId === cameraId)
 

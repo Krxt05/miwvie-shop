@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -58,10 +58,26 @@ function BookPage() {
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
 
+  const fetchedMonthsRef = useRef<Set<string>>(new Set())
+
+  function fetchMonth(year: number, month: number) {
+    if (!cameraId) return
+    const key = `${cameraId}-${year}-${month}`
+    if (fetchedMonthsRef.current.has(key)) return
+    fetchedMonthsRef.current.add(key)
+    getAvailability(cameraId, year, month).then((slots) => {
+      setBookedSlots((prev) => {
+        const ids = new Set(prev.map((s) => s.bookingId))
+        return [...prev, ...slots.filter((s) => !ids.has(s.bookingId))]
+      })
+    })
+  }
+
   useEffect(() => {
     if (!cameraId) return
     const now = new Date()
-    getAvailability(cameraId, now.getFullYear(), now.getMonth() + 1).then(setBookedSlots)
+    fetchMonth(now.getFullYear(), now.getMonth() + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
 
   useEffect(() => {
@@ -421,6 +437,7 @@ function BookPage() {
                   onSelectPickup={handlePickupSelect}
                   selectedPickup={pickupDatetime}
                   durationHours={durationHours}
+                  onMonthChange={fetchMonth}
                 />
 
                 {pickupDatetime && returnDatetime && (
