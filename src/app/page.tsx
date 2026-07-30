@@ -5,6 +5,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Instagram, ChevronRight, Clock, Truck, Shield, Star } from 'lucide-react'
 import { CAMERAS, PRICE_TABLES, ORIGINAL_PRICE_TABLES } from '@/lib/cameras'
+import { getAllCamerasAvailability } from '@/lib/api'
+import { CameraId } from '@/types'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 
@@ -20,7 +22,25 @@ const STAGGER = {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)
+  const [busyNow, setBusyNow] = useState<Record<string, boolean>>({})
   useEffect(() => setMounted(true), [])
+
+  useEffect(() => {
+    const now = new Date()
+    getAllCamerasAvailability(now.getFullYear(), now.getMonth() + 1).then((data) => {
+      const busy: Record<string, boolean> = {}
+      for (const cam of CAMERAS) {
+        const slots = data[cam.id as CameraId] ?? []
+        const concurrent = slots.filter((s) => {
+          const start = new Date(s.pickupDatetime)
+          const end = new Date(s.returnDatetime)
+          return start <= now && end > now
+        }).length
+        busy[cam.id] = concurrent >= cam.quantity
+      }
+      setBusyNow(busy)
+    })
+  }, [])
 
   return (
     <main className="min-h-screen bg-gradient-dark">
@@ -155,7 +175,11 @@ export default function Home() {
                         className="object-contain h-36 w-auto group-hover:scale-110 transition-transform duration-500 drop-shadow-lg"
                       />
                       <div className="absolute top-3 right-3">
-                        <Badge label="ว่าง" variant="available" />
+                        {busyNow[cam.id] ? (
+                          <Badge label="ไม่ว่าง" variant="busy" />
+                        ) : (
+                          <Badge label="ว่าง" variant="available" />
+                        )}
                       </div>
                     </div>
 
