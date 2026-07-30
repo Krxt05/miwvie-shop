@@ -477,7 +477,7 @@ function BookPage() {
                     selected={pickupType === 'delivery'}
                     onClick={() => setPickupType('delivery')}
                     title="Delivery +20฿"
-                    sub="ส่งถึงที่ในมมส."
+                    sub="เฉพาะมมส ม.ใหม่"
                   />
                   {pickupType === 'delivery' && (
                     <input
