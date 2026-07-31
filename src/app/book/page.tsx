@@ -313,7 +313,14 @@ function BookPage() {
                         <Image src={cam.image} alt={cam.name} width={60} height={44} className="object-contain h-10 w-auto" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-semibold">{cam.name}</p>
+                        <p className="font-semibold">
+                          {cam.name}
+                          {cam.quantity > 1 && (
+                            <span className="ml-1.5 inline-flex items-center justify-center text-[10px] font-bold text-white bg-pink rounded-full px-1.5 py-0.5 align-middle">
+                              x{cam.quantity}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-gray-400 text-sm">
                           เริ่ม {PRICE_TABLES[cam.priceGroup]?.day1 ?? 0} ฿/วัน
                         </p>

@@ -184,7 +184,14 @@ export default function Home() {
                     </div>
 
                     <div className="p-4">
-                      <h3 className="font-semibold mb-1 text-gray-800">{cam.name}</h3>
+                      <h3 className="font-semibold mb-1 text-gray-800">
+                        {cam.name}
+                        {cam.quantity > 1 && (
+                          <span className="ml-1.5 inline-flex items-center justify-center text-[10px] font-bold text-white bg-pink rounded-full px-1.5 py-0.5 align-middle">
+                            x{cam.quantity}
+                          </span>
+                        )}
+                      </h3>
                       <div className="flex items-baseline gap-1 mb-3">
                         <span className="text-pink font-bold text-lg">{prices.day1}</span>
                         <span className="text-gray-400 text-xs">฿ / วัน</span>
