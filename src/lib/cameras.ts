@@ -50,7 +50,7 @@ export const CAMERAS: Camera[] = [
     name: 'Canon IXY 510 IS',
     shortName: 'IXY 510 IS',
     image: '/cameras/ixy510is.png',
-    moodImages: ['/cameras/ixy510is.png', '/cameras/ixy510is.png', '/cameras/ixy510is.png'],
+    moodImages: ['/mood/ixy510is-1.jpg', '/mood/ixy510is-2.jpg', '/mood/ixy510is-3.jpg'],
     priceGroup: 'A',
     color: '#a8a29e',
     quantity: 1,
