@@ -142,6 +142,7 @@ function BookPage() {
       if (!customerName) errs.name = 'กรุณาระบุชื่อ'
       if (!customerPhone) errs.phone = 'กรุณาระบุเบอร์โทร'
       if (!idCardImage) errs.idCard = 'กรุณาอัปโหลดบัตรประชาชน'
+      if (!igProfileImage) errs.igProfile = 'กรุณาอัปโหลดแคปหน้าโปรไฟล์ IG หรือ Facebook'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -567,13 +568,13 @@ function BookPage() {
 
                   <div>
                     <p className="text-sm text-gray-500 mb-2">บัตรประชาชน * <span className="text-gray-400">(สามารถปิดเลขบัตรได้)</span></p>
-                    <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
-                      idCardImage ? 'border-pink/50 bg-pink/5' : 'border-pink-100 hover:border-pink-300'
+                    <label className={`flex flex-col items-center justify-center h-40 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
+                      idCardImage ? 'border-pink/50 bg-pink/5' : 'border-pink-300 bg-pink-50/60 hover:border-pink hover:bg-pink-50 hover:shadow-pink-glow-sm'
                     }`}>
                       {idCardImage ? (
                         <div className="relative w-full h-full">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={idCardImage} alt="ID" className="w-full h-full object-cover rounded-xl" />
+                          <img src={idCardImage} alt="ID" className="w-full h-full object-cover rounded-2xl" />
                           <button
                             onClick={(e) => { e.preventDefault(); setIdCardImage('') }}
                             className="absolute top-2 right-2 bg-black/60 rounded-full p-1"
@@ -583,13 +584,46 @@ function BookPage() {
                         </div>
                       ) : (
                         <>
-                          <Upload size={20} className="text-gray-400 mb-2" />
-                          <span className="text-gray-400 text-sm">อัปโหลดรูปบัตร</span>
+                          <div className="bg-white rounded-full p-3 shadow-pink-glow-sm mb-2">
+                            <Upload size={24} className="text-pink" />
+                          </div>
+                          <span className="text-pink-600 text-sm font-semibold">อัปโหลดรูปบัตรประชาชน</span>
+                          <span className="text-gray-400 text-xs mt-0.5">แตะเพื่อเลือกรูป</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'id')} />
                         </>
                       )}
                     </label>
                     {errors.idCard && <p className="text-pink text-xs mt-1">{errors.idCard}</p>}
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">แคปหน้าโปรไฟล์ IG หรือ Facebook ที่ระบุได้ว่าเป็นบุคคลเดียวกันบนบัตรประชาชน *</p>
+                    <label className={`flex flex-col items-center justify-center h-40 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
+                      igProfileImage ? 'border-pink/50 bg-pink/5' : 'border-pink-300 bg-pink-50/60 hover:border-pink hover:bg-pink-50 hover:shadow-pink-glow-sm'
+                    }`}>
+                      {igProfileImage ? (
+                        <div className="relative w-full h-full">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={igProfileImage} alt="IG Profile" className="w-full h-full object-cover rounded-2xl" />
+                          <button
+                            onClick={(e) => { e.preventDefault(); setIgProfileImage('') }}
+                            className="absolute top-2 right-2 bg-black/60 rounded-full p-1"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="bg-white rounded-full p-3 shadow-pink-glow-sm mb-2">
+                            <Upload size={24} className="text-pink" />
+                          </div>
+                          <span className="text-pink-600 text-sm font-semibold">อัปโหลดหน้าโปรไฟล์</span>
+                          <span className="text-gray-400 text-xs mt-0.5">แตะเพื่อเลือกรูป</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'ig')} />
+                        </>
+                      )}
+                    </label>
+                    {errors.igProfile && <p className="text-pink text-xs mt-1">{errors.igProfile}</p>}
                   </div>
 
                   {/* Discount code */}
@@ -627,32 +661,6 @@ function BookPage() {
                     {discountStatus === 'invalid' && (
                       <p className="text-pink text-xs mt-1">{discountError}</p>
                     )}
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500 mb-2">แคปหน้าโปรไฟล์ IG หรือ Facebook ที่ระบุได้ว่าเป็นบุคคลเดียวกันบนบัตรประชาชน</p>
-                    <label className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
-                      igProfileImage ? 'border-pink/50 bg-pink/5' : 'border-pink-100 hover:border-pink-300'
-                    }`}>
-                      {igProfileImage ? (
-                        <div className="relative w-full h-full">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={igProfileImage} alt="IG Profile" className="w-full h-full object-cover rounded-xl" />
-                          <button
-                            onClick={(e) => { e.preventDefault(); setIgProfileImage('') }}
-                            className="absolute top-2 right-2 bg-black/60 rounded-full p-1"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <Upload size={20} className="text-gray-400 mb-2" />
-                          <span className="text-gray-400 text-sm">อัปโหลดหน้าโปรไฟล์</span>
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'ig')} />
-                        </>
-                      )}
-                    </label>
                   </div>
                 </div>
               </div>
