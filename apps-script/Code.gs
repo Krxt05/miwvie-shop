@@ -158,8 +158,9 @@ function setupSheets() {
 
 // ── Availability ─────────────────────────────────────────────
 
-// After a customer returns a camera, keep it off the market for another
-// hour so the shop has time to charge the battery before the next rental.
+// Keep every booking off the market for an extra hour on both sides (to charge
+// the battery after a return, and to guarantee the same 1hr gap before a pickup
+// no matter which of two adjacent bookings was created first).
 const BATTERY_CHARGE_BUFFER_MS = 60 * 60 * 1000
 
 function getAvailability(cameraId, month) {
@@ -187,8 +188,9 @@ function getAvailability(cameraId, month) {
       if (row[iCamera] !== cameraId) continue
       if (row[iStatus] === 'cancelled') continue
 
-      const pickup = new Date(row[iPickup])
-      // Buffer only affects availability checks below, not the booking's own stored return time
+      // Buffer pads both sides so the 1hr gap holds regardless of which booking
+      // was created first — only affects availability checks, not the stored times
+      const pickup = new Date(new Date(row[iPickup]).getTime() - BATTERY_CHARGE_BUFFER_MS)
       const ret = new Date(new Date(row[iReturn]).getTime() + BATTERY_CHARGE_BUFFER_MS)
 
       if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
