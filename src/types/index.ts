@@ -31,6 +31,7 @@ export interface BookedSlot {
   pickupDatetime: string  // ISO
   returnDatetime: string  // ISO
   bookingId: string
+  quantity?: number  // units this slot takes up; defaults to 1 (admin blocks can cover more)
 }
 
 export interface BookingFormData {

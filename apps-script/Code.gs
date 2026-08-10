@@ -14,7 +14,7 @@ const BOOKING_HEADERS = [
   'discount_code', 'discount_amount',
 ]
 
-const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at']
+const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity']
 const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
 
 const CAMERA_NAMES = {
@@ -210,6 +210,7 @@ function getAvailability(cameraId, month) {
     const biCamera = bh.indexOf('camera_id')
     const biStart = bh.indexOf('start_datetime')
     const biEnd = bh.indexOf('end_datetime')
+    const biQuantity = bh.indexOf('quantity')
 
     for (let i = 1; i < bData.length; i++) {
       const row = bData[i]
@@ -219,7 +220,9 @@ function getAvailability(cameraId, month) {
         cameraId,
         pickupDatetime: new Date(row[biStart]).toISOString(),
         returnDatetime: new Date(row[biEnd]).toISOString(),
-        bookingId: 'blocked'
+        bookingId: 'blocked',
+        // Older rows predate this column and default to 1 unit blocked
+        quantity: biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
       })
     }
   }
@@ -254,8 +257,10 @@ function createBooking(data) {
     const slotPickup = new Date(slot.pickupDatetime)
     const slotReturn = new Date(slot.returnDatetime)
     if (slotPickup < newReturn && slotReturn > newPickup) {
-      events.push({ t: Math.max(slotPickup.getTime(), newPickup.getTime()), delta: 1 })
-      events.push({ t: Math.min(slotReturn.getTime(), newReturn.getTime()), delta: -1 })
+      // A booking always ties up exactly 1 unit; an admin block can cover more
+      const w = slot.quantity || 1
+      events.push({ t: Math.max(slotPickup.getTime(), newPickup.getTime()), delta: w })
+      events.push({ t: Math.min(slotReturn.getTime(), newReturn.getTime()), delta: -w })
     }
   }
   events.sort((a, b) => a.t - b.t || a.delta - b.delta)
@@ -410,9 +415,26 @@ function blockDates(cameraId, start, end, reason, pin) {
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
 
+  ensureBlockedQuantityColumn(sheet)
+
+  // A block must remove every physical unit from the market. For a specific
+  // model that's its own stock count; for 'ALL' it must cover the model with
+  // the most units (930 IS has 2) or that model's second unit stays bookable.
+  const quantity = cameraId === 'ALL'
+    ? Math.max.apply(null, Object.keys(CAMERA_QUANTITY).map(function (k) { return CAMERA_QUANTITY[k] }))
+    : (CAMERA_QUANTITY[cameraId] || 1)
+
   const id = 'BLK-' + Date.now()
-  sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString()])
+  sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString(), quantity])
   return { success: true, id }
+}
+
+function ensureBlockedQuantityColumn(sheet) {
+  const lastCol = sheet.getLastColumn()
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+  if (headers.indexOf('quantity') === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('quantity')
+  }
 }
 
 function listBlockedSlots(pin) {

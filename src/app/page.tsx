@@ -31,11 +31,13 @@ export default function Home() {
       const busy: Record<string, boolean> = {}
       for (const cam of CAMERAS) {
         const slots = data[cam.id as CameraId] ?? []
-        const concurrent = slots.filter((s) => {
-          const start = new Date(s.pickupDatetime)
-          const end = new Date(s.returnDatetime)
-          return start <= now && end > now
-        }).length
+        const concurrent = slots
+          .filter((s) => {
+            const start = new Date(s.pickupDatetime)
+            const end = new Date(s.returnDatetime)
+            return start <= now && end > now
+          })
+          .reduce((sum, s) => sum + (s.quantity || 1), 0)
         busy[cam.id] = concurrent >= cam.quantity
       }
       setBusyNow(busy)

@@ -104,7 +104,7 @@ export function calcDeliveryFee(pickupType: string, returnType: string): number 
 // Sweep-line: true if the number of slots overlapping at any point within
 // [rangeStart, rangeEnd) reaches quantity (all units taken at once).
 export function hasCapacityConflict(
-  slots: { pickupDatetime: string; returnDatetime: string }[],
+  slots: { pickupDatetime: string; returnDatetime: string; quantity?: number }[],
   quantity: number,
   rangeStart: Date,
   rangeEnd: Date,
@@ -117,8 +117,10 @@ export function hasCapacityConflict(
     const start = new Date(s.pickupDatetime).getTime()
     const end = new Date(s.returnDatetime).getTime()
     if (start < rangeEndMs && end > rangeStartMs) {
-      events.push({ t: Math.max(start, rangeStartMs), delta: 1 })
-      events.push({ t: Math.min(end, rangeEndMs), delta: -1 })
+      // A booking always ties up exactly 1 unit; an admin block can cover more
+      const w = s.quantity || 1
+      events.push({ t: Math.max(start, rangeStartMs), delta: w })
+      events.push({ t: Math.min(end, rangeEndMs), delta: -w })
     }
   }
 
