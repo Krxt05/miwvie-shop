@@ -163,79 +163,119 @@ function setupSheets() {
 // no matter which of two adjacent bookings was created first).
 const BATTERY_CHARGE_BUFFER_MS = 60 * 60 * 1000
 
+// Raw readers — always hit the sheet fresh, no caching. Used both by the
+// (cached) public availability endpoints below AND by createBooking's own
+// capacity check, which must never see stale data or double-booking becomes
+// possible within the cache window.
+
+function readBookingSlotsAll(month) {
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  const result = []
+  if (!sheet || sheet.getLastRow() < 2) return result
+
+  const data = sheet.getDataRange().getValues()
+  const h = data[0]
+  const iCamera = h.indexOf('camera_id')
+  const iPickup = h.indexOf('pickup_datetime')
+  const iReturn = h.indexOf('return_datetime')
+  const iId = h.indexOf('booking_id')
+  const iStatus = h.indexOf('booking_status')
+
+  const [mYear, mMonth] = month ? month.split('-').map(Number) : [0, 0]
+  const monthStart = mYear ? new Date(mYear, mMonth - 1, 1) : null
+  const monthEnd = mYear ? new Date(mYear, mMonth, 1) : null
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i]
+    if (!row[iId]) continue
+    if (row[iStatus] === 'cancelled') continue
+
+    // Buffer pads both sides so the 1hr gap holds regardless of which booking
+    // was created first — only affects availability checks, not the stored times
+    const pickup = new Date(new Date(row[iPickup]).getTime() - BATTERY_CHARGE_BUFFER_MS)
+    const ret = new Date(new Date(row[iReturn]).getTime() + BATTERY_CHARGE_BUFFER_MS)
+
+    if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
+
+    result.push({
+      cameraId: row[iCamera],
+      pickupDatetime: pickup.toISOString(),
+      returnDatetime: ret.toISOString(),
+      bookingId: row[iId],
+    })
+  }
+  return result
+}
+
+function readBlockedSlotsAll() {
+  const blocked = getSpreadsheet().getSheetByName('blocked_slots')
+  const result = []
+  if (!blocked || blocked.getLastRow() < 2) return result
+
+  const bData = blocked.getDataRange().getValues()
+  const bh = bData[0]
+  const biCamera = bh.indexOf('camera_id')
+  const biStart = bh.indexOf('start_datetime')
+  const biEnd = bh.indexOf('end_datetime')
+  const biQuantity = bh.indexOf('quantity')
+
+  for (let i = 1; i < bData.length; i++) {
+    const row = bData[i]
+    if (!row[0]) continue
+    result.push({
+      cameraId: row[biCamera], // a specific model id, or 'ALL'
+      pickupDatetime: new Date(row[biStart]).toISOString(),
+      returnDatetime: new Date(row[biEnd]).toISOString(),
+      bookingId: 'blocked',
+      // Older rows predate this column and default to 1 unit blocked
+      quantity: biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
+    })
+  }
+  return result
+}
+
+function slotsForCamera(cameraId, bookingSlots, blockedSlots) {
+  return bookingSlots
+    .filter((s) => s.cameraId === cameraId)
+    .concat(
+      blockedSlots
+        .filter((s) => s.cameraId === cameraId || s.cameraId === 'ALL')
+        .map((s) => Object.assign({}, s, { cameraId }))
+    )
+}
+
+// Public, cached layer — used by the doGet calendar/display endpoints only.
+// Short TTL keeps the sheet from being re-read on every page view without
+// risking stale reads anywhere a booking decision actually gets made.
+const AVAILABILITY_CACHE_TTL_SEC = 30
+
 function getAvailability(cameraId, month) {
-  const ss = getSpreadsheet()
-  const sheet = ss.getSheetByName('bookings')
-  const blocked = ss.getSheetByName('blocked_slots')
-  const slots = []
+  const cache = CacheService.getScriptCache()
+  const cacheKey = 'avail_' + cameraId + '_' + (month || 'all')
+  const cached = cache.get(cacheKey)
+  if (cached) return JSON.parse(cached)
 
-  if (sheet && sheet.getLastRow() > 1) {
-    const data = sheet.getDataRange().getValues()
-    const h = data[0]
-    const iCamera = h.indexOf('camera_id')
-    const iPickup = h.indexOf('pickup_datetime')
-    const iReturn = h.indexOf('return_datetime')
-    const iId = h.indexOf('booking_id')
-    const iStatus = h.indexOf('booking_status')
-
-    const [mYear, mMonth] = month ? month.split('-').map(Number) : [0, 0]
-    const monthStart = mYear ? new Date(mYear, mMonth - 1, 1) : null
-    const monthEnd = mYear ? new Date(mYear, mMonth, 1) : null
-
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i]
-      if (!row[iId]) continue
-      if (row[iCamera] !== cameraId) continue
-      if (row[iStatus] === 'cancelled') continue
-
-      // Buffer pads both sides so the 1hr gap holds regardless of which booking
-      // was created first — only affects availability checks, not the stored times
-      const pickup = new Date(new Date(row[iPickup]).getTime() - BATTERY_CHARGE_BUFFER_MS)
-      const ret = new Date(new Date(row[iReturn]).getTime() + BATTERY_CHARGE_BUFFER_MS)
-
-      if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
-
-      slots.push({
-        cameraId,
-        pickupDatetime: pickup.toISOString(),
-        returnDatetime: ret.toISOString(),
-        bookingId: row[iId]
-      })
-    }
-  }
-
-  if (blocked && blocked.getLastRow() > 1) {
-    const bData = blocked.getDataRange().getValues()
-    const bh = bData[0]
-    const biCamera = bh.indexOf('camera_id')
-    const biStart = bh.indexOf('start_datetime')
-    const biEnd = bh.indexOf('end_datetime')
-    const biQuantity = bh.indexOf('quantity')
-
-    for (let i = 1; i < bData.length; i++) {
-      const row = bData[i]
-      if (!row[0]) continue
-      if (row[biCamera] !== cameraId && row[biCamera] !== 'ALL') continue
-      slots.push({
-        cameraId,
-        pickupDatetime: new Date(row[biStart]).toISOString(),
-        returnDatetime: new Date(row[biEnd]).toISOString(),
-        bookingId: 'blocked',
-        // Older rows predate this column and default to 1 unit blocked
-        quantity: biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
-      })
-    }
-  }
-
-  return { slots }
+  const slots = slotsForCamera(cameraId, readBookingSlotsAll(month), readBlockedSlotsAll())
+  const result = { slots }
+  cache.put(cacheKey, JSON.stringify(result), AVAILABILITY_CACHE_TTL_SEC)
+  return result
 }
 
 function getAllAvailability(month) {
+  const cache = CacheService.getScriptCache()
+  const cacheKey = 'availAll_' + (month || 'all')
+  const cached = cache.get(cacheKey)
+  if (cached) return JSON.parse(cached)
+
+  const bookingSlots = readBookingSlotsAll(month)
+  const blockedSlots = readBlockedSlotsAll()
   const cameras = {}
-  Object.keys(CAMERA_NAMES).forEach(id => {
-    cameras[id] = getAvailability(id, month).slots
+  Object.keys(CAMERA_NAMES).forEach((id) => {
+    cameras[id] = slotsForCamera(id, bookingSlots, blockedSlots)
   })
-  return { cameras }
+  const result = { cameras }
+  cache.put(cacheKey, JSON.stringify(result), AVAILABILITY_CACHE_TTL_SEC)
+  return result
 }
 
 // ── Create booking ───────────────────────────────────────────
@@ -247,7 +287,10 @@ function createBooking(data) {
 
   // Validate capacity: count concurrent overlapping bookings/blocks
   // (including admin blocks) against how many physical units this model has
-  const existing = getAvailability(data.cameraId, null).slots
+  // Bypass the cached getAvailability() here — this check must always see the
+  // live sheet, never a stale cached read, or two bookings could double-book
+  // the same unit within the cache TTL window.
+  const existing = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
   const newPickup = new Date(data.pickupDatetime)
   const newReturn = new Date(data.returnDatetime)
   const quantity = CAMERA_QUANTITY[data.cameraId] || 1
