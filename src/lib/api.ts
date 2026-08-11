@@ -137,7 +137,6 @@ export interface BlockedSlot {
   endDatetime: string
   reason: string
   createdAt: string
-  quantity: number  // units this block covers; defaults to 1 for rows predating the column
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,7 +148,6 @@ function mapBlockedSlot(r: Record<string, any>): BlockedSlot {
     endDatetime: String(r.end_datetime ?? ''),
     reason: String(r.reason ?? ''),
     createdAt: String(r.created_at ?? ''),
-    quantity: Number(r.quantity) || 1,
   }
 }
 
