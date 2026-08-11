@@ -42,6 +42,7 @@ export default function AdminPage() {
   const [copied, setCopied] = useState<string | null>(null)
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([])
   const [showBlockForm, setShowBlockForm] = useState(false)
+  const [showBlockedList, setShowBlockedList] = useState(false)
   const [blockCamera, setBlockCamera] = useState<CameraId | 'ALL'>('ALL')
   const [blockStart, setBlockStart] = useState('')
   const [blockEnd, setBlockEnd] = useState('')
@@ -165,13 +166,22 @@ export default function AdminPage() {
       .reduce((s, b) => s + Number(b.totalAmount), 0),
   }
 
+  // A block's `quantity` can cover more than one physical unit (e.g. both 930
+  // IS units, or every model at once via "ALL") — expand it into one heatmap
+  // row per unit it actually occupies, or partitionByUnit only fills one row
+  // and the other unit misleadingly still looks free.
   const occupancyRows = [
     ...bookings
       .filter((b) => b.bookingStatus !== 'cancelled')
       .map((b) => ({ cameraId: b.cameraId, start: String(b.pickupDatetime), end: String(b.returnDatetime) })),
-    ...blockedSlots
-      .filter((b) => b.cameraId !== 'ALL')
-      .map((b) => ({ cameraId: b.cameraId as CameraId, start: b.startDatetime, end: b.endDatetime })),
+    ...blockedSlots.flatMap((b) => {
+      const targetCameras = b.cameraId === 'ALL' ? CAMERAS.map((c) => c.id) : [b.cameraId as CameraId]
+      return targetCameras.flatMap((cameraId) => {
+        const camera = CAMERAS.find((c) => c.id === cameraId)
+        const units = Math.max(1, Math.min(b.quantity, camera?.quantity ?? 1))
+        return Array.from({ length: units }, () => ({ cameraId, start: b.startDatetime, end: b.endDatetime }))
+      })
+    }),
   ]
 
   if (!authed) {
@@ -323,28 +333,49 @@ export default function AdminPage() {
           </AnimatePresence>
 
           {blockedSlots.length > 0 && (
-            <div className="space-y-2 mt-3 pt-3 border-t border-pink-100">
-              {blockedSlots.map((b) => (
-                <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">
-                      {b.cameraId === 'ALL' ? 'ทุกรุ่น' : CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId}
-                      {b.reason && <span className="text-gray-400 font-normal"> · {b.reason}</span>}
-                    </p>
-                    <p className="text-gray-400">
-                      {format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – {format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteBlock(b.id)}
-                    disabled={blockDeletingId === b.id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 shrink-0 transition-colors disabled:opacity-40"
-                    title="ลบ"
+            <div className="mt-3 pt-3 border-t border-pink-100">
+              <button
+                onClick={() => setShowBlockedList((v) => !v)}
+                className="w-full flex items-center justify-between text-xs text-gray-500 hover:text-pink-600 transition-colors font-semibold"
+              >
+                <span>รายการที่บล็อกไว้ ({blockedSlots.length})</span>
+                {showBlockedList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <AnimatePresence>
+                {showBlockedList && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
                   >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
+                    <div className="space-y-2 pt-3">
+                      {blockedSlots.map((b) => (
+                        <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">
+                              {b.cameraId === 'ALL' ? 'ทุกรุ่น' : CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId}
+                              {b.reason && <span className="text-gray-400 font-normal"> · {b.reason}</span>}
+                            </p>
+                            <p className="text-gray-400">
+                              {format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – {format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteBlock(b.id)}
+                            disabled={blockDeletingId === b.id}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 shrink-0 transition-colors disabled:opacity-40"
+                            title="ลบ"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>
