@@ -137,6 +137,7 @@ export interface BlockedSlot {
   endDatetime: string
   reason: string
   createdAt: string
+  quantity: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -148,6 +149,7 @@ function mapBlockedSlot(r: Record<string, any>): BlockedSlot {
     endDatetime: String(r.end_datetime ?? ''),
     reason: String(r.reason ?? ''),
     createdAt: String(r.created_at ?? ''),
+    quantity: Number(r.quantity) || 1,
   }
 }
 
@@ -157,6 +159,7 @@ export async function blockDates(
   end: Date,
   reason: string,
   pin: string,
+  quantity?: number,
 ): Promise<{ success?: boolean; id?: string; error?: string }> {
   return post({
     action: 'blockDates',
@@ -165,6 +168,7 @@ export async function blockDates(
     end: end.toISOString(),
     reason,
     pin,
+    quantity,
   })
 }
 

@@ -99,7 +99,7 @@ function handlePost(body) {
     case 'getAdminBookings':     return getAdminBookings(body.pin)
     case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
     case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
-    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin)
+    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity)
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
@@ -409,7 +409,7 @@ function deleteBooking(bookingId, pin) {
   return { error: 'Booking not found' }
 }
 
-function blockDates(cameraId, start, end, reason, pin) {
+function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
   if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
 
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
@@ -417,12 +417,13 @@ function blockDates(cameraId, start, end, reason, pin) {
 
   ensureBlockedQuantityColumn(sheet)
 
-  // A block must remove every physical unit from the market. For a specific
-  // model that's its own stock count; for 'ALL' it must cover the model with
-  // the most units (930 IS has 2) or that model's second unit stays bookable.
+  // 'ALL' always means "take every unit of every model off the market" —
+  // must cover the model with the most units (930 IS has 2) or that model's
+  // second unit stays bookable. For a specific model, the admin picks how
+  // many of that model's own units this block covers (1..its stock count).
   const quantity = cameraId === 'ALL'
     ? Math.max.apply(null, Object.keys(CAMERA_QUANTITY).map(function (k) { return CAMERA_QUANTITY[k] }))
-    : (CAMERA_QUANTITY[cameraId] || 1)
+    : Math.max(1, Math.min(Number(requestedQuantity) || 1, CAMERA_QUANTITY[cameraId] || 1))
 
   const id = 'BLK-' + Date.now()
   sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString(), quantity])

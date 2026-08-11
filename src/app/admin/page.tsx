@@ -47,6 +47,7 @@ export default function AdminPage() {
   const [blockStart, setBlockStart] = useState('')
   const [blockEnd, setBlockEnd] = useState('')
   const [blockReason, setBlockReason] = useState('')
+  const [blockQty, setBlockQty] = useState(1)
   const [blockSubmitting, setBlockSubmitting] = useState(false)
   const [blockDeletingId, setBlockDeletingId] = useState<string | null>(null)
 
@@ -82,13 +83,14 @@ export default function AdminPage() {
       return
     }
     setBlockSubmitting(true)
-    const res = await blockDates(blockCamera, start, end, blockReason, pin)
+    const res = await blockDates(blockCamera, start, end, blockReason, pin, blockQty)
     if (res.success) {
       const blocks = await listBlockedSlots(pin)
       setBlockedSlots(blocks ?? [])
       setBlockStart('')
       setBlockEnd('')
       setBlockReason('')
+      setBlockQty(1)
       setShowBlockForm(false)
     } else {
       alert(res.error || 'เกิดข้อผิดพลาด')
@@ -279,7 +281,11 @@ export default function AdminPage() {
                 <div className="space-y-3 pt-3">
                   <select
                     value={blockCamera}
-                    onChange={(e) => setBlockCamera(e.target.value as CameraId | 'ALL')}
+                    onChange={(e) => {
+                      const next = e.target.value as CameraId | 'ALL'
+                      setBlockCamera(next)
+                      setBlockQty(1)
+                    }}
                     className="w-full glass rounded-lg px-3 py-2 text-sm outline-none bg-transparent"
                   >
                     <option value="ALL">ทุกรุ่น</option>
@@ -287,6 +293,25 @@ export default function AdminPage() {
                       <option key={c.id} value={c.id}>{c.shortName}</option>
                     ))}
                   </select>
+                  {blockCamera !== 'ALL' && (CAMERAS.find((c) => c.id === blockCamera)?.quantity ?? 1) > 1 && (
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">
+                        จำนวนตัวที่บล็อก (มีทั้งหมด {CAMERAS.find((c) => c.id === blockCamera)?.quantity} ตัว)
+                      </label>
+                      <select
+                        value={blockQty}
+                        onChange={(e) => setBlockQty(Number(e.target.value))}
+                        className="w-full glass rounded-lg px-3 py-2 text-sm outline-none bg-transparent"
+                      >
+                        {Array.from(
+                          { length: CAMERAS.find((c) => c.id === blockCamera)?.quantity ?? 1 },
+                          (_, i) => i + 1,
+                        ).map((n) => (
+                          <option key={n} value={n}>{n} ตัว</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">เริ่ม</label>
@@ -347,6 +372,7 @@ export default function AdminPage() {
                           <div className="min-w-0">
                             <p className="font-semibold truncate">
                               {b.cameraId === 'ALL' ? 'ทุกรุ่น' : CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId}
+                              {b.cameraId !== 'ALL' && b.quantity > 1 && ` (${b.quantity} ตัว)`}
                               {b.reason && <span className="text-gray-400 font-normal"> · {b.reason}</span>}
                             </p>
                             <p className="text-gray-400">
