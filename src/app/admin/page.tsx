@@ -42,6 +42,7 @@ export default function AdminPage() {
   const [copied, setCopied] = useState<string | null>(null)
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([])
   const [showBlockForm, setShowBlockForm] = useState(false)
+  const [showBlockedList, setShowBlockedList] = useState(false)
   const [blockCamera, setBlockCamera] = useState<CameraId | 'ALL'>('ALL')
   const [blockStart, setBlockStart] = useState('')
   const [blockEnd, setBlockEnd] = useState('')
@@ -323,28 +324,49 @@ export default function AdminPage() {
           </AnimatePresence>
 
           {blockedSlots.length > 0 && (
-            <div className="space-y-2 mt-3 pt-3 border-t border-pink-100">
-              {blockedSlots.map((b) => (
-                <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">
-                      {b.cameraId === 'ALL' ? 'ทุกรุ่น' : CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId}
-                      {b.reason && <span className="text-gray-400 font-normal"> · {b.reason}</span>}
-                    </p>
-                    <p className="text-gray-400">
-                      {format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – {format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteBlock(b.id)}
-                    disabled={blockDeletingId === b.id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 shrink-0 transition-colors disabled:opacity-40"
-                    title="ลบ"
+            <div className="mt-3 pt-3 border-t border-pink-100">
+              <button
+                onClick={() => setShowBlockedList((v) => !v)}
+                className="w-full flex items-center justify-between text-xs text-gray-500 hover:text-pink-600 transition-colors font-semibold"
+              >
+                <span>รายการที่บล็อกไว้ ({blockedSlots.length})</span>
+                {showBlockedList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <AnimatePresence>
+                {showBlockedList && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
                   >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
+                    <div className="space-y-2 pt-3">
+                      {blockedSlots.map((b) => (
+                        <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">
+                              {b.cameraId === 'ALL' ? 'ทุกรุ่น' : CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId}
+                              {b.reason && <span className="text-gray-400 font-normal"> · {b.reason}</span>}
+                            </p>
+                            <p className="text-gray-400">
+                              {format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – {format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteBlock(b.id)}
+                            disabled={blockDeletingId === b.id}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 shrink-0 transition-colors disabled:opacity-40"
+                            title="ลบ"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>
