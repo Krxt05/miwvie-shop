@@ -113,7 +113,7 @@ function parseDateCommand(text: string): { iso: string; label: string } | null {
     if (year > 2500) year -= 543 // เผื่อพิมพ์ปี พ.ศ.
     if (month < 1 || month > 12 || day < 1 || day > 31) return null
     const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return { iso, label: `${day}/${month}/${String(year).slice(2)}` }
+    return { iso, label: '' } // วันที่ระบุ — ไม่มีคำว่า "วันนี้/พรุ่งนี้" นำหน้า
   }
 
   return null
@@ -157,52 +157,77 @@ async function fetchDayQueue(iso: string): Promise<DayQueue> {
 
 // ── จัดรูปข้อความตอบกลับ ─────────────────────────────────────
 
-function prettyDate(iso: string): string {
+const TH_WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+
+// "พฤ 3 ก.ย." (มี rel → "พรุ่งนี้ | พฤ 3 ก.ย.") ; ไม่มี rel → "พฤ 3 ก.ย. 69"
+function dateLabel(iso: string, rel: string): string {
   const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10))
-  return `${d} ${TH_MONTHS[m - 1]} ${String(y + 543).slice(2)}`
+  const wd = TH_WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+  const base = `${wd} ${d} ${TH_MONTHS[m - 1]}`
+  if (rel) return `${rel} | ${base}`
+  return `${base} ${String(y + 543).slice(2)}`
 }
 
-function fmtPhone(p: string): string {
-  const digits = (p ?? '').replace(/\D/g, '')
-  // Sheets ตัด 0 หน้าเบอร์มือถือทิ้ง → เติมกลับ
-  const full = digits.length === 9 ? '0' + digits : digits
-  return full.length === 10 ? `${full.slice(0, 3)}-${full.slice(3, 6)}-${full.slice(6)}` : p
+// "Canon IXY 200 (IXUS 185)" → "IXY 200"
+function shortCam(name: string): string {
+  return name
+    .replace(/^Canon\s+/i, '')
+    .replace(/\s*\(.*\)\s*$/, '')
+    .trim()
 }
 
-function line(it: QueueItem, kind: 'pickup' | 'return'): string {
-  const time = kind === 'pickup' ? it.pickupTime : it.returnTime
-  const method =
-    kind === 'pickup'
-      ? it.pickupType === 'delivery'
-        ? `Delivery${it.pickupAddress ? ' → ' + it.pickupAddress : ''}`
-        : 'รับเอง'
-      : it.returnType === 'delivery'
-        ? `ให้ร้านรับ${it.returnAddress ? ' → ' + it.returnAddress : ''}`
-        : 'คืนเอง'
-  const ig = it.customerIG ? ` · ${it.customerIG}` : ''
-  return `• ${time} · ${it.cameraName}\n  ${it.customerName} ${fmtPhone(it.customerPhone)}${ig}\n  ${method}`
+// จองแบบราย 4 วัน+ เก็บเวลาเป็น 00:00 → โชว์ "ทั้งวัน"
+function fmtTime(t: string): string {
+  return t === '00:00' ? 'ทั้งวัน' : t
 }
 
-function formatQueue(label: string, iso: string, q: DayQueue): string {
-  const parts: string[] = [`📋 คิว${label} (${prettyDate(iso)})`]
+function pickupBlock(it: QueueItem): string {
+  const lines = [`${fmtTime(it.pickupTime)}  ${shortCam(it.cameraName)}`, it.customerName]
+  if (it.pickupType === 'delivery') {
+    if (it.customerIG) lines.push(`IG ${it.customerIG}`)
+    lines.push(`📍 ส่ง → ${it.pickupAddress.trim() || '(ไม่ระบุที่อยู่)'}`)
+  } else {
+    lines.push(it.customerIG ? `IG ${it.customerIG} | รับเอง` : 'รับเอง')
+  }
+  return lines.join('\n')
+}
+
+function returnBlock(it: QueueItem): string {
+  const head = `${fmtTime(it.returnTime)}  ${shortCam(it.cameraName)} | ${it.customerName}`
+  if (it.returnType === 'delivery') {
+    const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
+    return `${head}${ig}\n📍 ร้านไปรับ → ${it.returnAddress.trim() || '(ไม่ระบุที่อยู่)'}`
+  }
+  return head
+}
+
+function formatQueue(rel: string, iso: string, q: DayQueue): string {
+  const head = `📅 ${dateLabel(iso, rel)}`
+
+  if (!q.pickups.length && !q.returns.length && !q.active.length) {
+    return `${head}\n\n✅ ว่าง ไม่มีคิวรับ-คืน`
+  }
+
+  const summary =
+    `รับ ${q.pickups.length} | คืน ${q.returns.length}` +
+    (q.active.length ? ` | เช่าอยู่ ${q.active.length}` : '')
+  const parts: string[] = [head, summary]
 
   if (q.pickups.length) {
-    parts.push('', `🛵 รับกล้อง (${q.pickups.length})`, ...q.pickups.map((it) => line(it, 'pickup')))
+    parts.push('', '━━ 🛵 รับกล้อง ━━', '', q.pickups.map(pickupBlock).join('\n\n'))
   }
   if (q.returns.length) {
-    parts.push('', `📦 คืนกล้อง (${q.returns.length})`, ...q.returns.map((it) => line(it, 'return')))
+    parts.push('', '━━ 📦 คืนกล้อง ━━', '', q.returns.map(returnBlock).join('\n\n'))
   }
   if (q.active.length) {
     parts.push(
       '',
-      `🎥 กำลังเช่าอยู่ (${q.active.length})`,
-      ...q.active.map(
-        (it) => `• ${it.cameraName} — ${it.customerName} (คืน ${prettyDate(it.returnDate)} ${it.returnTime})`,
-      ),
+      '━━ 🎥 กำลังเช่าอยู่ ━━',
+      '',
+      q.active
+        .map((it) => `${shortCam(it.cameraName)} | ${it.customerName}\nคืน ${dateLabel(it.returnDate, '')} ${fmtTime(it.returnTime)}`)
+        .join('\n\n'),
     )
-  }
-  if (!q.pickups.length && !q.returns.length && !q.active.length) {
-    parts.push('', 'ไม่มีคิวรับ/คืนวันนี้ 🎉')
   }
   return parts.join('\n')
 }
