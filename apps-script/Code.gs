@@ -103,6 +103,7 @@ function handlePost(body) {
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
+    case 'getDayQueue':          return getDayQueue(body.pin, body.date)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -381,6 +382,63 @@ function getAdminBookings(pin) {
   }
 
   return { bookings: bookings.reverse() }
+}
+
+// คิวของวันหนึ่ง (สำหรับ LINE bot คำสั่ง "วันนี้"/"พรุ่งนี้"/"5/9/26")
+// date = 'yyyy-MM-dd' (โซนเวลา Asia/Bangkok)
+function getDayQueue(pin, date) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet || sheet.getLastRow() < 2) return { date: date, pickups: [], returns: [], active: [] }
+
+  const data = sheet.getDataRange().getValues()
+  const h = data[0]
+  const col = {}
+  h.forEach(function (name, i) { col[name] = i })
+
+  const pickups = []
+  const returns = []
+  const active = []
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i]
+    if (!row[col['booking_id']]) continue
+    if (row[col['booking_status']] === 'cancelled') continue
+
+    const pd = new Date(row[col['pickup_datetime']])
+    const rd = new Date(row[col['return_datetime']])
+    if (isNaN(pd.getTime()) || isNaN(rd.getTime())) continue
+
+    const pDay = Utilities.formatDate(pd, 'Asia/Bangkok', 'yyyy-MM-dd')
+    const rDay = Utilities.formatDate(rd, 'Asia/Bangkok', 'yyyy-MM-dd')
+
+    const item = {
+      bookingId: row[col['booking_id']],
+      cameraName: row[col['camera_name']] || row[col['camera_id']],
+      pickupTime: Utilities.formatDate(pd, 'Asia/Bangkok', 'HH:mm'),
+      returnTime: Utilities.formatDate(rd, 'Asia/Bangkok', 'HH:mm'),
+      pickupDate: pDay,
+      returnDate: rDay,
+      customerName: row[col['customer_name']],
+      customerPhone: String(row[col['customer_phone']]),
+      customerIG: row[col['customer_ig']] || '',
+      pickupType: row[col['pickup_type']],
+      returnType: row[col['return_type']],
+      pickupAddress: row[col['pickup_address']] || '',
+      returnAddress: row[col['return_address']] || '',
+      status: row[col['booking_status']],
+    }
+
+    if (pDay === date) pickups.push(item)
+    if (rDay === date) returns.push(item)
+    if (pDay < date && rDay > date) active.push(item)
+  }
+
+  pickups.sort(function (a, b) { return a.pickupTime < b.pickupTime ? -1 : 1 })
+  returns.sort(function (a, b) { return a.returnTime < b.returnTime ? -1 : 1 })
+
+  return { date: date, pickups: pickups, returns: returns, active: active }
 }
 
 function updateBookingStatus(bookingId, status, pin) {
