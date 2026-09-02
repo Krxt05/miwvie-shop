@@ -509,7 +509,11 @@ export default function AdminPage() {
                           />
                           <Detail
                             label="คืนเครื่อง"
-                            value={b.returnType === 'delivery' ? 'ให้ร้านรับ' : 'คืนเอง'}
+                            value={
+                              b.returnType === 'delivery'
+                                ? `ให้ร้านรับ${b.returnAddress ? ` → ${b.returnAddress}` : ''}`
+                                : 'คืนเอง'
+                            }
                           />
                         </div>
 

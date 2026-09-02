@@ -601,7 +601,8 @@ function sendLineNotify(bookingId, data, discountAmount) {
     '📸 จองใหม่! ' + bookingId,
     '📷 ' + camName,
     '📅 รับ: ' + pickup + ' → คืน: ' + ret,
-    '👤 ' + data.customerName + ' | ' + data.customerPhone,
+    '👤 ' + data.customerName + ' | ' + data.customerPhone +
+      (data.customerIG ? ' | IG/LINE: ' + data.customerIG : ''),
     '💰 ' + data.totalAmount + ' ฿' + discount,
     pickupLine,
     returnLine,

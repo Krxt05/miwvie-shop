@@ -81,6 +81,17 @@ export default function ReceiptCard({ bookingId, form }: Props) {
             label="รับ/คืน"
             value={`${form.pickupType === 'self' ? 'รับเอง' : 'Delivery'} / ${form.returnType === 'self' ? 'คืนเอง' : 'Delivery'}`}
           />
+          {(() => {
+            const pu = form.pickupType === 'delivery' ? form.pickupAddress : ''
+            const ru = form.returnType === 'delivery' ? form.returnAddress : ''
+            if (pu && ru && pu === ru) return <AddressRow label="ที่อยู่จัดส่ง" value={pu} />
+            return (
+              <>
+                {pu && <AddressRow label="ที่อยู่รับ" value={pu} />}
+                {ru && <AddressRow label="ที่อยู่คืน" value={ru} />}
+              </>
+            )
+          })()}
           <Row label="ชื่อ" value={form.customerName} />
         </div>
 
@@ -161,6 +172,15 @@ function Row({
       <span className={`text-right text-sm ${accent === 'emerald' ? 'text-emerald-500 font-semibold' : highlight ? 'text-gray-800 font-semibold' : 'text-gray-700'}`}>
         {value}
       </span>
+    </div>
+  )
+}
+
+function AddressRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm text-gray-500">{label}</span>
+      <span className="text-sm text-gray-700 whitespace-pre-wrap break-words">{value}</span>
     </div>
   )
 }

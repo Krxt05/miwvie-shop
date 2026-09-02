@@ -140,7 +140,11 @@ export default function BookingStatusPage() {
               />
               <Row
                 label="คืนเครื่อง"
-                value={booking.returnType === 'self' ? 'คืนเอง (ฟรี)' : 'ให้ร้านรับ'}
+                value={
+                  booking.returnType === 'self'
+                    ? 'คืนเอง (ฟรี)'
+                    : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
+                }
               />
 
               <div className="border-t border-pink-100 pt-3 flex justify-between font-bold text-pink">

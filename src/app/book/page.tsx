@@ -41,6 +41,8 @@ function BookPage() {
   const [pickupType, setPickupType] = useState<DeliveryType>('self')
   const [pickupAddress, setPickupAddress] = useState('')
   const [returnType, setReturnType] = useState<DeliveryType>('self')
+  const [returnSameAsPickup, setReturnSameAsPickup] = useState(true)
+  const [returnAddress, setReturnAddress] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerIG, setCustomerIG] = useState('')
@@ -137,6 +139,7 @@ function BookPage() {
     }
     if (step === 2) {
       if (pickupType === 'delivery' && !pickupAddress) errs.pickupAddr = 'กรุณาระบุที่อยู่รับ'
+      if (returnType === 'delivery' && !effectiveReturnAddress) errs.returnAddr = 'กรุณาระบุที่อยู่คืน'
     }
     if (step === 3) {
       if (!customerName) errs.name = 'กรุณาระบุชื่อ'
@@ -172,7 +175,7 @@ function BookPage() {
         pickupType,
         pickupAddress,
         returnType,
-        returnAddress: '',
+        returnAddress: effectiveReturnAddress,
         customerName,
         customerPhone,
         customerIG,
@@ -208,6 +211,11 @@ function BookPage() {
       setDiscountError(res.error ?? 'โค้ดไม่ถูกต้อง')
     }
   }
+
+  const canReusePickupAddr = pickupType === 'delivery'
+  const returnUsesSame = returnType === 'delivery' && canReusePickupAddr && returnSameAsPickup
+  const effectiveReturnAddress =
+    returnType !== 'delivery' ? '' : returnUsesSame ? pickupAddress : returnAddress
 
   const price = camera ? calcPrice(camera.priceGroup, durationHours) : 0
   const deliveryFee = calcDeliveryFee(pickupType, returnType)
@@ -526,8 +534,36 @@ function BookPage() {
                     selected={returnType === 'delivery'}
                     onClick={() => setReturnType('delivery')}
                     title="ให้ร้านรับ +20฿"
-                    sub="มารับถึงที่ในมมส."
+                    sub="เฉพาะมมส. ม.ใหม่"
                   />
+                  {returnType === 'delivery' && (
+                    <div className="ml-4 pl-3 border-l-2 border-pink-100 space-y-1.5">
+                      {canReusePickupAddr && (
+                        <>
+                          <SubOption
+                            selected={returnSameAsPickup}
+                            onClick={() => setReturnSameAsPickup(true)}
+                            title="ใช้ที่อยู่เดิม"
+                            sub={pickupAddress || undefined}
+                          />
+                          <SubOption
+                            selected={!returnSameAsPickup}
+                            onClick={() => setReturnSameAsPickup(false)}
+                            title="ที่อยู่อื่น (ระบุ)"
+                          />
+                        </>
+                      )}
+                      {(!canReusePickupAddr || !returnSameAsPickup) && (
+                        <input
+                          className="w-full glass rounded-xl px-4 py-2.5 text-sm outline-none focus:border-pink placeholder:text-gray-400"
+                          placeholder="ระบุที่อยู่คืน (หอ/อาคาร/ห้อง)"
+                          value={returnAddress}
+                          onChange={(e) => setReturnAddress(e.target.value)}
+                        />
+                      )}
+                      {errors.returnAddr && <p className="text-pink text-xs mt-1">{errors.returnAddr}</p>}
+                    </div>
+                  )}
                 </Section>
 
                 <div className="glass rounded-xl p-4 mt-5 text-sm space-y-1">
@@ -687,7 +723,7 @@ function BookPage() {
                   />
                   <SummaryRow
                     label="คืนเครื่อง"
-                    value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : 'ให้ร้านรับ +20฿'}
+                    value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : `Delivery → ${effectiveReturnAddress}`}
                   />
                   <SummaryRow label="ชื่อ" value={customerName} />
                   <SummaryRow label="โทร" value={customerPhone} />
@@ -736,7 +772,7 @@ function BookPage() {
                     pickupType,
                     pickupAddress,
                     returnType,
-                    returnAddress: '',
+                    returnAddress: effectiveReturnAddress,
                     customerName,
                     customerPhone,
                     customerIG,
@@ -790,7 +826,7 @@ function Section({ title, children, className = '' }: { title: string; children:
   )
 }
 
-function OptionCard({ selected, onClick, title, sub }: { selected: boolean; onClick: () => void; title: string; sub: string }) {
+function OptionCard({ selected, onClick, title, sub }: { selected: boolean; onClick: () => void; title: string; sub?: string }) {
   return (
     <button
       onClick={onClick}
@@ -800,9 +836,26 @@ function OptionCard({ selected, onClick, title, sub }: { selected: boolean; onCl
     >
       <div>
         <p className="font-medium text-sm">{title}</p>
-        <p className="text-gray-400 text-xs mt-0.5">{sub}</p>
+        {sub && <p className="text-gray-400 text-xs mt-0.5">{sub}</p>}
       </div>
       <div className={`w-5 h-5 rounded-full border-2 transition-all shrink-0 ${selected ? 'border-pink bg-pink' : 'border-pink-200'}`} />
+    </button>
+  )
+}
+
+function SubOption({ selected, onClick, title, sub }: { selected: boolean; onClick: () => void; title: string; sub?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full bg-white rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-left border transition-all ${
+        selected ? 'border-pink shadow-pink-glow-sm' : 'border-pink-100 hover:border-pink-200'
+      }`}
+    >
+      <div className="min-w-0">
+        <p className={`text-sm ${selected ? 'text-pink font-medium' : 'text-gray-600'}`}>{title}</p>
+        {sub && <p className="text-gray-400 text-xs mt-0.5 truncate">{sub}</p>}
+      </div>
+      <div className={`w-4 h-4 rounded-full border-2 transition-all shrink-0 ${selected ? 'border-pink bg-pink' : 'border-pink-200'}`} />
     </button>
   )
 }
