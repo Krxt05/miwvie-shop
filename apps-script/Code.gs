@@ -87,6 +87,7 @@ function handleGet(p) {
     case 'getAllAvailability':  return getAllAvailability(p.month)
     case 'getBooking':         return getBookingById(p.id)
     case 'validateDiscountCode': return validateDiscountCode(p.code)
+    case 'getUpcomingQueue':    return getUpcomingQueue(p.pin)
     default: return { error: 'Unknown action: ' + p.action }
   }
 }
@@ -104,7 +105,9 @@ function handlePost(body) {
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
     case 'getDayQueue':          return getDayQueue(body.pin, body.date)
-    case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text)
+    case 'getUpcomingQueue':     return getUpcomingQueue(body.pin)
+    case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text, body.texts)
+    case 'linePush':             return linePush(body.pin, body.text, body.texts)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -442,22 +445,142 @@ function getDayQueue(pin, date) {
   return { date: date, pickups: pickups, returns: returns, active: active }
 }
 
-// ส่งข้อความตอบกลับ LINE (ใช้ token ที่เก็บใน Script Properties)
-// เรียกจาก Vercel /api/line-webhook — Vercel ไม่ต้องรู้ token
-function lineReply(pin, replyToken, text) {
+// คิวทั้งหมดตั้งแต่วันนี้เป็นต้นไป — จัดกลุ่มตามวัน (สำหรับคำสั่ง "คิวทั้งหมด")
+function getUpcomingQueue(pin) {
   if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
-  if (!replyToken || !text) return { error: 'missing replyToken/text' }
 
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd')
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet || sheet.getLastRow() < 2) return { today: today, days: [] }
+
+  const data = sheet.getDataRange().getValues()
+  const h = data[0]
+  const col = {}
+  h.forEach(function (name, i) { col[name] = i })
+
+  const byDay = {}
+  function bucket(d) {
+    if (!byDay[d]) byDay[d] = { date: d, pickups: [], returns: [] }
+    return byDay[d]
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i]
+    if (!row[col['booking_id']]) continue
+    if (row[col['booking_status']] === 'cancelled') continue
+
+    const pd = new Date(row[col['pickup_datetime']])
+    const rd = new Date(row[col['return_datetime']])
+    if (isNaN(pd.getTime()) || isNaN(rd.getTime())) continue
+
+    const pDay = Utilities.formatDate(pd, 'Asia/Bangkok', 'yyyy-MM-dd')
+    const rDay = Utilities.formatDate(rd, 'Asia/Bangkok', 'yyyy-MM-dd')
+
+    const item = {
+      bookingId: row[col['booking_id']],
+      cameraName: row[col['camera_name']] || row[col['camera_id']],
+      pickupTime: Utilities.formatDate(pd, 'Asia/Bangkok', 'HH:mm'),
+      returnTime: Utilities.formatDate(rd, 'Asia/Bangkok', 'HH:mm'),
+      pickupDate: pDay,
+      returnDate: rDay,
+      customerName: row[col['customer_name']],
+      customerIG: row[col['customer_ig']] || '',
+      pickupType: row[col['pickup_type']],
+      returnType: row[col['return_type']],
+      pickupAddress: row[col['pickup_address']] || '',
+      returnAddress: row[col['return_address']] || '',
+      status: row[col['booking_status']],
+    }
+
+    if (pDay >= today) bucket(pDay).pickups.push(item)
+    if (rDay >= today) bucket(rDay).returns.push(item)
+  }
+
+  const days = Object.keys(byDay).sort().map(function (k) {
+    byDay[k].pickups.sort(function (a, b) { return a.pickupTime < b.pickupTime ? -1 : 1 })
+    byDay[k].returns.sort(function (a, b) { return a.returnTime < b.returnTime ? -1 : 1 })
+    return byDay[k]
+  })
+  return { today: today, days: days }
+}
+
+// ── LINE reply / push (ใช้ token ที่เก็บใน Script Properties) ──
+// Vercel เรียกมา — Vercel ไม่ต้องรู้ token
+
+function lineSend(kind, replyToken, msgs) {
   const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_TOKEN')
   if (!token) return { error: 'no LINE_CHANNEL_TOKEN' }
 
-  const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+  const messages = msgs.filter(function (t) { return t }).slice(0, 5).map(function (t) {
+    return { type: 'text', text: String(t).slice(0, 4999) }
+  })
+  if (!messages.length) return { error: 'no text' }
+
+  let endpoint, payload
+  if (kind === 'reply') {
+    endpoint = 'https://api.line.me/v2/bot/message/reply'
+    payload = { replyToken: replyToken, messages: messages }
+  } else {
+    const userIds = (PropertiesService.getScriptProperties().getProperty('LINE_USER_ID') || '')
+      .split(',').map(function (s) { return s.trim() }).filter(function (s) { return s })
+    if (!userIds.length) return { error: 'no recipients' }
+    if (userIds.length === 1) {
+      endpoint = 'https://api.line.me/v2/bot/message/push'
+      payload = { to: userIds[0], messages: messages }
+    } else {
+      endpoint = 'https://api.line.me/v2/bot/message/multicast'
+      payload = { to: userIds, messages: messages }
+    }
+  }
+
+  const res = UrlFetchApp.fetch(endpoint, {
     method: 'post',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true,
   })
+  Logger.log('lineSend ' + kind + ' ' + res.getResponseCode() + ': ' + res.getContentText())
   return { ok: res.getResponseCode() === 200, code: res.getResponseCode() }
+}
+
+function lineReply(pin, replyToken, text, texts) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  if (!replyToken) return { error: 'missing replyToken' }
+  return lineSend('reply', replyToken, texts && texts.length ? texts : [text])
+}
+
+function linePush(pin, text, texts) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  return lineSend('push', null, texts && texts.length ? texts : [text])
+}
+
+// ── แจ้งเตือนคิวพรุ่งนี้อัตโนมัติ ทุกวันเวลา ~16:00 ──────────
+// รัน setupSchedule() ครั้งเดียวจาก editor เพื่อสร้าง trigger
+
+var LINE_BOT_BASE = 'https://miwvie-shop.vercel.app'
+
+function pushTomorrow() {
+  const pin = getAdminPin()
+  try {
+    const res = UrlFetchApp.fetch(
+      LINE_BOT_BASE + '/api/line-webhook?q=' + encodeURIComponent('พรุ่งนี้') + '&pin=' + encodeURIComponent(pin),
+      { muteHttpExceptions: true }
+    )
+    const data = JSON.parse(res.getContentText())
+    const texts = (data.texts && data.texts.length) ? data.texts : (data.text ? [data.text] : [])
+    if (!texts.length) { Logger.log('pushTomorrow: no texts ' + res.getContentText()); return }
+    linePush(pin, null, texts)
+  } catch (e) {
+    Logger.log('pushTomorrow error: ' + e.message)
+  }
+}
+
+function setupSchedule() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'pushTomorrow') ScriptApp.deleteTrigger(t)
+  })
+  ScriptApp.newTrigger('pushTomorrow').timeBased().everyDays(1).atHour(16).inTimezone('Asia/Bangkok').create()
+  return 'ok — pushTomorrow ตั้งเวลาทุกวัน ~16:00 แล้ว'
 }
 
 function updateBookingStatus(bookingId, status, pin) {
