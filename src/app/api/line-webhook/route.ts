@@ -7,15 +7,16 @@ import crypto from 'crypto'
 //   "มะรืน"         → คิวมะรืนนี้
 //   "5/9/26" ฯลฯ   → คิววันที่ระบุ (d/m/yy หรือ d/m/yyyy, ใช้ - หรือ . คั่นก็ได้)
 //
-// ต้องตั้ง env ใน Vercel:
-//   LINE_CHANNEL_SECRET     — Basic settings → Channel secret (ไว้ verify signature)
-//   LINE_CHANNEL_TOKEN      — Messaging API → Channel access token (ตัวเดียวกับใน Apps Script)
+// การตอบกลับ LINE ทำผ่าน Apps Script (action 'lineReply') ซึ่งถือ token อยู่แล้ว
+// — Vercel จึงไม่ต้องเก็บ token ของ LINE
+//
+// env ใน Vercel:
 //   LINE_ADMIN_USER_IDS     — userId แอดมิน คั่นด้วย , (ตัวเดียวกับ LINE_USER_ID ใน Apps Script)
 //   SCRIPT_URL              — มีอยู่แล้ว
 //   ADMIN_PIN               — ถ้าไม่ตั้ง จะใช้ 1234
+//   LINE_CHANNEL_SECRET     — (ไม่บังคับ) ตั้งไว้เพื่อ verify signature ของ webhook
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? ''
-const CHANNEL_TOKEN = process.env.LINE_CHANNEL_TOKEN ?? ''
 const ADMIN_IDS = (process.env.LINE_ADMIN_USER_IDS ?? '')
   .split(',')
   .map((s) => s.trim())
@@ -206,16 +207,12 @@ function formatQueue(label: string, iso: string, q: DayQueue): string {
   return parts.join('\n')
 }
 
-// ── ตอบกลับ LINE ────────────────────────────────────────────
+// ── ตอบกลับ LINE (ผ่าน Apps Script) ─────────────────────────
 
 async function reply(replyToken: string, text: string) {
-  if (!CHANNEL_TOKEN) return
-  await fetch('https://api.line.me/v2/bot/message/reply', {
+  await fetch(SCRIPT_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${CHANNEL_TOKEN}`,
-    },
-    body: JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'lineReply', pin: ADMIN_PIN, replyToken, text }),
   })
 }

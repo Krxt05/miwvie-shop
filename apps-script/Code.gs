@@ -104,6 +104,7 @@ function handlePost(body) {
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
     case 'getDayQueue':          return getDayQueue(body.pin, body.date)
+    case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -439,6 +440,24 @@ function getDayQueue(pin, date) {
   returns.sort(function (a, b) { return a.returnTime < b.returnTime ? -1 : 1 })
 
   return { date: date, pickups: pickups, returns: returns, active: active }
+}
+
+// ส่งข้อความตอบกลับ LINE (ใช้ token ที่เก็บใน Script Properties)
+// เรียกจาก Vercel /api/line-webhook — Vercel ไม่ต้องรู้ token
+function lineReply(pin, replyToken, text) {
+  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  if (!replyToken || !text) return { error: 'missing replyToken/text' }
+
+  const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_TOKEN')
+  if (!token) return { error: 'no LINE_CHANNEL_TOKEN' }
+
+  const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    method: 'post',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
+    muteHttpExceptions: true,
+  })
+  return { ok: res.getResponseCode() === 200, code: res.getResponseCode() }
 }
 
 function updateBookingStatus(bookingId, status, pin) {
