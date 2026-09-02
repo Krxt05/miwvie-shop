@@ -176,13 +176,8 @@ function shortCam(name: string): string {
     .trim()
 }
 
-// จองแบบราย 4 วัน+ เก็บเวลาเป็น 00:00 → โชว์ "ทั้งวัน"
-function fmtTime(t: string): string {
-  return t === '00:00' ? 'ทั้งวัน' : t
-}
-
 function pickupBlock(it: QueueItem): string {
-  const lines = [`${fmtTime(it.pickupTime)}  ${shortCam(it.cameraName)}`, it.customerName]
+  const lines = [`${it.pickupTime}  ${shortCam(it.cameraName)}`, it.customerName]
   if (it.pickupType === 'delivery') {
     if (it.customerIG) lines.push(`IG ${it.customerIG}`)
     lines.push(`📍 ส่ง → ${it.pickupAddress.trim() || '(ไม่ระบุที่อยู่)'}`)
@@ -193,7 +188,7 @@ function pickupBlock(it: QueueItem): string {
 }
 
 function returnBlock(it: QueueItem): string {
-  const head = `${fmtTime(it.returnTime)}  ${shortCam(it.cameraName)} | ${it.customerName}`
+  const head = `${it.returnTime}  ${shortCam(it.cameraName)} | ${it.customerName}`
   if (it.returnType === 'delivery') {
     const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
     return `${head}${ig}\n📍 ร้านไปรับ → ${it.returnAddress.trim() || '(ไม่ระบุที่อยู่)'}`
@@ -225,7 +220,7 @@ function formatQueue(rel: string, iso: string, q: DayQueue): string {
       '━━ 🎥 กำลังเช่าอยู่ ━━',
       '',
       q.active
-        .map((it) => `${shortCam(it.cameraName)} | ${it.customerName}\nคืน ${dateLabel(it.returnDate, '')} ${fmtTime(it.returnTime)}`)
+        .map((it) => `${shortCam(it.cameraName)} | ${it.customerName}\nคืน ${dateLabel(it.returnDate, '')} ${it.returnTime}`)
         .join('\n\n'),
     )
   }
