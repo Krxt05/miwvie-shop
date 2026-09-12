@@ -12,7 +12,18 @@ const BOOKING_HEADERS = [
   'id_card_url', 'ig_profile_url',
   'payment_status', 'booking_status', 'admin_notes',
   'discount_code', 'discount_amount',
+  'rental_area', 'shipping_address', 'shipping_subdistrict', 'shipping_district', 'shipping_province', 'shipping_postal_code',
+  'returned_at',
 ]
+
+// Provincial rentals ship both ways, so the physical unit is off the market for
+// 3 extra days on each side; local rentals only need a short battery-charge gap.
+const PROVINCIAL_SHIP_BUFFER_MS = 3 * 24 * 60 * 60 * 1000
+const MIN_PROVINCIAL_DURATION_HOURS = 72
+// Days of lead time the shop needs to ship a unit out so it lands in the
+// customer's hands on their chosen start day. Kept separate from the buffer
+// constant above in case the two ever need to diverge.
+const PROVINCIAL_SHIP_LEAD_DAYS = 3
 
 const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity']
 const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
@@ -185,6 +196,8 @@ function readBookingSlotsAll(month) {
   const iReturn = h.indexOf('return_datetime')
   const iId = h.indexOf('booking_id')
   const iStatus = h.indexOf('booking_status')
+  const iArea = h.indexOf('rental_area')
+  const iReturnedAt = h.indexOf('returned_at')
 
   const [mYear, mMonth] = month ? month.split('-').map(Number) : [0, 0]
   const monthStart = mYear ? new Date(mYear, mMonth - 1, 1) : null
@@ -195,10 +208,30 @@ function readBookingSlotsAll(month) {
     if (!row[iId]) continue
     if (row[iStatus] === 'cancelled') continue
 
-    // Buffer pads both sides so the 1hr gap holds regardless of which booking
-    // was created first — only affects availability checks, not the stored times
-    const pickup = new Date(new Date(row[iPickup]).getTime() - BATTERY_CHARGE_BUFFER_MS)
-    const ret = new Date(new Date(row[iReturn]).getTime() + BATTERY_CHARGE_BUFFER_MS)
+    // Buffer pads both sides so the gap holds regardless of which booking was
+    // created first — only affects availability checks, not the stored times.
+    // Provincial rentals ship both ways, so they need a much bigger buffer.
+    const isProvincial = iArea >= 0 && row[iArea] === 'provincial'
+    const buffer = isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : BATTERY_CHARGE_BUFFER_MS
+    const returnedAtRaw = iReturnedAt >= 0 ? row[iReturnedAt] : ''
+
+    let pickup, ret
+    if (isProvincial && row[iStatus] === 'returned' && returnedAtRaw) {
+      // Provincial unit is physically back at the shop — both ship legs are done.
+      // Collapse the whole window to a 1hr battery-charge gap from the actual
+      // return moment, so the queue frees up right away instead of waiting out
+      // the 3-day tail (and the ship-out reservation on the front is moot too).
+      pickup = new Date(row[iPickup]) // keep the original start so past months still bucket right
+      ret = new Date(new Date(returnedAtRaw).getTime() + BATTERY_CHARGE_BUFFER_MS)
+      if (ret < pickup) pickup = ret // returned before the delivered date (shipped early) — collapse
+    } else {
+      // Head of the queue: reserve the lead time before the start day (ship-out
+      // leg for provincial, shared 1hr gap for local).
+      pickup = new Date(new Date(row[iPickup]).getTime() - buffer)
+      // Tail: return time + the same buffer. Provincial rows that predate the
+      // returned_at column fall back to this too.
+      ret = new Date(new Date(row[iReturn]).getTime() + buffer)
+    }
 
     if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
 
@@ -231,7 +264,10 @@ function readBlockedSlotsAll() {
       cameraId: row[biCamera], // a specific model id, or 'ALL'
       pickupDatetime: new Date(row[biStart]).toISOString(),
       returnDatetime: new Date(row[biEnd]).toISOString(),
-      bookingId: 'blocked',
+      // Must be UNIQUE: the booking page merges slots from every fetch and
+      // de-dupes on this id, so a shared literal like 'blocked' made every block
+      // after the first one silently vanish from the customer's calendar.
+      bookingId: String(row[0]),
       // Older rows predate this column and default to 1 unit blocked
       quantity: biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
     })
@@ -245,7 +281,9 @@ function slotsForCamera(cameraId, bookingSlots, blockedSlots) {
     .concat(
       blockedSlots
         .filter((s) => s.cameraId === cameraId || s.cameraId === 'ALL')
-        .map((s) => Object.assign({}, s, { cameraId }))
+        // An 'ALL' block is re-emitted once per camera — suffix the id so the two
+        // copies stay distinct in the client's de-dupe map.
+        .map((s) => Object.assign({}, s, { cameraId: cameraId, bookingId: s.bookingId + '@' + cameraId }))
     )
 }
 
@@ -266,39 +304,38 @@ function getAllAvailability(month) {
 
 // ── Create booking ───────────────────────────────────────────
 
+// Midnight (00:00) of "today" in Bangkok, as a Date. The booking calendar sends
+// start days at 00:00, so provincial lead-time checks must anchor here rather
+// than to the current clock time.
+function startOfTodayBangkok() {
+  return new Date(Utilities.formatDate(new Date(), 'Asia/Bangkok', "yyyy-MM-dd'T'00:00:00+07:00"))
+}
+
 function createBooking(data) {
   const ss = getSpreadsheet()
   const sheet = ss.getSheetByName('bookings')
   if (!sheet) return { error: 'Run setup first via ?action=setup' }
 
-  // Validate capacity: count concurrent overlapping bookings/blocks
-  // (including admin blocks) against how many physical units this model has
-  const existing = getAvailability(data.cameraId, null).slots
-  const newPickup = new Date(data.pickupDatetime)
-  const newReturn = new Date(data.returnDatetime)
-  const quantity = CAMERA_QUANTITY[data.cameraId] || 1
+  const isProvincial = data.rentalArea === 'provincial'
 
-  const events = []
-  for (const slot of existing) {
-    const slotPickup = new Date(slot.pickupDatetime)
-    const slotReturn = new Date(slot.returnDatetime)
-    if (slotPickup < newReturn && slotReturn > newPickup) {
-      // A booking always ties up exactly 1 unit; an admin block can cover more
-      const w = slot.quantity || 1
-      events.push({ t: Math.max(slotPickup.getTime(), newPickup.getTime()), delta: w })
-      events.push({ t: Math.min(slotReturn.getTime(), newReturn.getTime()), delta: -w })
-    }
+  if (isProvincial && Number(data.durationHours) < MIN_PROVINCIAL_DURATION_HOURS) {
+    return { error: 'เช่าต่างจังหวัดขั้นต่ำ 3 วัน' }
   }
-  events.sort((a, b) => a.t - b.t || a.delta - b.delta)
-  let concurrent = 0
-  for (const e of events) {
-    concurrent += e.delta
-    if (concurrent >= quantity) {
-      return { error: 'กล้องรุ่นนี้ถูกจองเต็มจำนวนในช่วงเวลาที่เลือกแล้ว' }
+  if (isProvincial) {
+    // Compare against the START of today (Bangkok), not Date.now(): the calendar
+    // sends a 00:00 start day, so anchoring to the current clock time would
+    // reject the very first day the picker offers on every booking made after
+    // midnight. Keep this in lock-step with DayRangePicker's earliestStart.
+    const earliest = startOfTodayBangkok().getTime()
+      + PROVINCIAL_SHIP_LEAD_DAYS * 24 * 60 * 60 * 1000
+    if (new Date(data.pickupDatetime).getTime() < earliest) {
+      return { error: 'เช่าต่างจังหวัดต้องจองล่วงหน้าอย่างน้อย 3 วัน เผื่อเวลาส่งพัสดุ' }
     }
   }
 
-  // Validate discount code if provided
+  ensureColumns(sheet, BOOKING_HEADERS)
+
+  // Validate discount code (a read — safe outside the lock)
   let discountAmount = 0
   if (data.discountCode) {
     const validation = validateDiscountCode(data.discountCode)
@@ -308,44 +345,158 @@ function createBooking(data) {
     discountAmount = data.discountAmount || 0
   }
 
-  const bookingId = generateBookingId(sheet)
-  const now = new Date().toISOString()
+  // Upload the ID/profile shots BEFORE taking the lock. Two Drive round-trips
+  // take seconds; holding the global lock across them would stall every other
+  // booking (and every admin block) for that whole time. The filename is only
+  // cosmetic, so a provisional one is fine — the booking row links by URL.
+  const uploadKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd-HHmmss') +
+    '-' + String(data.customerPhone || '').slice(-4)
+  const idCardUrl = data.idCardImage ? uploadImage(data.idCardImage, uploadKey + '_id') : ''
+  const igUrl = data.igProfileImage ? uploadImage(data.igProfileImage, uploadKey + '_ig') : ''
 
-  const idCardUrl = data.idCardImage ? uploadImage(data.idCardImage, bookingId + '_id') : ''
-  const igUrl = data.igProfileImage ? uploadImage(data.igProfileImage, bookingId + '_ig') : ''
+  // Everything from the capacity check through the row write must be atomic:
+  // two people submitting for the last unit at the same instant would otherwise
+  // both read "1 free" and both get written. Serialise with a script lock.
+  const lock = LockService.getScriptLock()
+  try {
+    lock.waitLock(20000)
+  } catch (e) {
+    return { error: 'ระบบกำลังยุ่ง มีคนกำลังจองพร้อมกัน กรุณาลองอีกครั้งใน 1-2 วินาที' }
+  }
 
-  sheet.appendRow([
-    bookingId, now,
-    data.cameraId, CAMERA_NAMES[data.cameraId] || data.cameraId,
-    data.pickupDatetime, data.returnDatetime, data.durationHours,
-    data.price, data.deliveryFee, data.totalAmount,
-    data.pickupType, data.pickupAddress || '',
-    data.returnType, data.returnAddress || '',
-    data.customerName, data.customerPhone, data.customerIG || '',
-    idCardUrl, igUrl,
-    'pending', 'pending', '',
-    data.discountCode || '', discountAmount,
-  ])
+  let bookingId
+  try {
+    // Validate capacity: count concurrent overlapping bookings/blocks
+    // (including admin blocks) against how many physical units this model has.
+    // A provincial candidate also needs its own window padded — it independently
+    // needs lead time to ship out before pickup and transit time after return,
+    // on top of whatever buffer the neighboring booking already carries.
+    // Always reads the live sheet (no cache) so the check can't miss a booking
+    // that landed a moment earlier.
+    const existing = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
+    const candidateBuffer = isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : 0
+    const newPickup = new Date(new Date(data.pickupDatetime).getTime() - candidateBuffer)
+    const newReturn = new Date(new Date(data.returnDatetime).getTime() + candidateBuffer)
+    const quantity = CAMERA_QUANTITY[data.cameraId] || 1
 
-  // Mark discount code as used
+    const events = []
+    for (const slot of existing) {
+      const slotPickup = new Date(slot.pickupDatetime)
+      const slotReturn = new Date(slot.returnDatetime)
+      if (slotPickup < newReturn && slotReturn > newPickup) {
+        // A booking always ties up exactly 1 unit; an admin block can cover more
+        const w = slot.quantity || 1
+        events.push({ t: Math.max(slotPickup.getTime(), newPickup.getTime()), delta: w })
+        events.push({ t: Math.min(slotReturn.getTime(), newReturn.getTime()), delta: -w })
+      }
+    }
+    events.sort((a, b) => a.t - b.t || a.delta - b.delta)
+    let concurrent = 0
+    for (const e of events) {
+      concurrent += e.delta
+      if (concurrent >= quantity) {
+        return { error: 'กล้องรุ่นนี้ถูกจองเต็มจำนวนในช่วงเวลาที่เลือกแล้ว' }
+      }
+    }
+
+    bookingId = generateBookingId()
+    const now = new Date().toISOString()
+
+    // Write by header NAME, not by position — the live sheet has a stray unnamed
+    // column, so a positional appendRow lands every field after it in the wrong
+    // place. Map values onto whatever the actual header row says.
+    const values = {
+      booking_id: bookingId,
+      created_at: now,
+      camera_id: data.cameraId,
+      camera_name: CAMERA_NAMES[data.cameraId] || data.cameraId,
+      pickup_datetime: data.pickupDatetime,
+      return_datetime: data.returnDatetime,
+      duration_hours: data.durationHours,
+      price: data.price,
+      delivery_fee: data.deliveryFee,
+      total_amount: data.totalAmount,
+      pickup_type: data.pickupType,
+      pickup_address: data.pickupAddress || '',
+      return_type: data.returnType,
+      return_address: data.returnAddress || '',
+      customer_name: data.customerName,
+      customer_phone: data.customerPhone,
+      customer_ig: data.customerIG || '',
+      id_card_url: idCardUrl,
+      ig_profile_url: igUrl,
+      payment_status: 'pending',
+      booking_status: 'pending',
+      admin_notes: '',
+      discount_code: data.discountCode || '',
+      discount_amount: discountAmount,
+      rental_area: data.rentalArea || 'local',
+      shipping_address: data.shippingAddress || '',
+      shipping_subdistrict: data.shippingSubdistrict || '',
+      shipping_district: data.shippingDistrict || '',
+      shipping_province: data.shippingProvince || '',
+      shipping_postal_code: data.shippingPostalCode || '',
+      returned_at: '',
+    }
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    const rowArr = header.map(function (name) {
+      return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''
+    })
+    const newRow = sheet.getLastRow() + 1
+    sheet.getRange(newRow, 1, 1, rowArr.length).setValues([rowArr])
+    SpreadsheetApp.flush() // make sure the row is committed before the lock frees
+
+    // Highlight pending row (booking_status column)
+    const statusCol = header.indexOf('booking_status') + 1
+    if (statusCol > 0) sheet.getRange(newRow, statusCol).setBackground('#fef3c7')
+  } finally {
+    lock.releaseLock()
+  }
+
+  // Mark discount code as used (own lock inside applyDiscountCode if needed)
   if (data.discountCode && discountAmount > 0) {
     applyDiscountCode(data.discountCode, bookingId)
   }
 
-  // Highlight pending row
-  const lastRow = sheet.getLastRow()
-  sheet.getRange(lastRow, 21).setBackground('#fef3c7')
-
-  // LINE notification
+  // LINE notification — outside the lock, network call shouldn't block others
   sendLineNotify(bookingId, data, discountAmount)
 
   return { success: true, bookingId }
 }
 
-function generateBookingId(sheet) {
+// Monotonic per-day sequence held in Script Properties, so an ID is never reused
+// even if rows are later deleted (getLastRow-based numbering collided in prod).
+// Callers hold the script lock, so the read-increment-write here is safe.
+function generateBookingId() {
   const date = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd')
-  const seq = String(sheet.getLastRow()).padStart(3, '0')
-  return 'MIW-' + date + '-' + seq
+  const props = PropertiesService.getScriptProperties()
+  const key = 'seq_' + date
+
+  let current = Number(props.getProperty(key)) || 0
+  if (current === 0) {
+    // First booking of the day under the new scheme — seed from the highest
+    // sequence already on the sheet for today so we never reuse an old ID.
+    current = highestSeqForDate('MIW-' + date + '-')
+  }
+
+  const next = current + 1
+  props.setProperty(key, String(next))
+  return 'MIW-' + date + '-' + String(next).padStart(3, '0')
+}
+
+function highestSeqForDate(prefix) {
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet || sheet.getLastRow() < 2) return 0
+  const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues()
+  let max = 0
+  for (let i = 0; i < ids.length; i++) {
+    const id = String(ids[i][0] || '')
+    if (id.indexOf(prefix) === 0) {
+      const n = parseInt(id.slice(prefix.length), 10)
+      if (n > max) max = n
+    }
+  }
+  return max
 }
 
 // ── Get booking ──────────────────────────────────────────────
@@ -388,6 +539,56 @@ function getAdminBookings(pin) {
   return { bookings: bookings.reverse() }
 }
 
+// Build one queue row for the LINE bot. Provincial bookings need different
+// "action days" than local ones: the shop physically ships the parcel out
+// PROVINCIAL_SHIP_LEAD_DAYS before it lands in the customer's hands, so the
+// pickup action belongs on that ship-out day, not the delivered-on day. Times
+// are meaningless for provincial (the calendar only picks whole days), so they
+// come back blank and the formatter omits them.
+function buildQueueItem(row, col) {
+  const pd = new Date(row[col['pickup_datetime']])
+  const rd = new Date(row[col['return_datetime']])
+  if (isNaN(pd.getTime()) || isNaN(rd.getTime())) return null
+
+  const isProvincial = col['rental_area'] != null && row[col['rental_area']] === 'provincial'
+  const shipOut = isProvincial
+    ? new Date(pd.getTime() - PROVINCIAL_SHIP_BUFFER_MS)
+    : pd
+
+  const fmtDay = function (d) { return Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM-dd') }
+  const fmtTime = function (d) { return Utilities.formatDate(d, 'Asia/Bangkok', 'HH:mm') }
+
+  return {
+    bookingId: row[col['booking_id']],
+    cameraName: row[col['camera_name']] || row[col['camera_id']],
+    rentalArea: isProvincial ? 'provincial' : 'local',
+    // pickupDate/pickupTime = the day (and time) the shop must ACT on the pickup:
+    // ship-out day for provincial, the booked pickup for local.
+    pickupDate: fmtDay(shipOut),
+    pickupTime: isProvincial ? '' : fmtTime(pd),
+    // when the parcel is due to reach the customer (provincial only, else same)
+    deliveredDate: fmtDay(pd),
+    returnDate: fmtDay(rd),
+    returnTime: isProvincial ? '' : fmtTime(rd),
+    customerName: row[col['customer_name']],
+    customerPhone: String(row[col['customer_phone']] || ''),
+    customerIG: row[col['customer_ig']] || '',
+    pickupType: isProvincial ? 'ship' : row[col['pickup_type']],
+    returnType: isProvincial ? 'ship' : row[col['return_type']],
+    pickupAddress: row[col['pickup_address']] || '',
+    returnAddress: row[col['return_address']] || '',
+    shippingAddress: col['shipping_address'] != null
+      ? [row[col['shipping_address']],
+         col['shipping_subdistrict'] != null && row[col['shipping_subdistrict']] ? ('ต.' + row[col['shipping_subdistrict']]) : '',
+         row[col['shipping_district']] ? ('อ./เขต ' + row[col['shipping_district']]) : '',
+         row[col['shipping_province']] ? ('จ.' + row[col['shipping_province']]) : '',
+         row[col['shipping_postal_code']] || '']
+        .filter(function (s) { return s }).join(' ')
+      : '',
+    status: row[col['booking_status']],
+  }
+}
+
 // คิวของวันหนึ่ง (สำหรับ LINE bot คำสั่ง "วันนี้"/"พรุ่งนี้"/"5/9/26")
 // date = 'yyyy-MM-dd' (โซนเวลา Asia/Bangkok)
 function getDayQueue(pin, date) {
@@ -410,33 +611,12 @@ function getDayQueue(pin, date) {
     if (!row[col['booking_id']]) continue
     if (row[col['booking_status']] === 'cancelled') continue
 
-    const pd = new Date(row[col['pickup_datetime']])
-    const rd = new Date(row[col['return_datetime']])
-    if (isNaN(pd.getTime()) || isNaN(rd.getTime())) continue
+    const item = buildQueueItem(row, col)
+    if (!item) continue
 
-    const pDay = Utilities.formatDate(pd, 'Asia/Bangkok', 'yyyy-MM-dd')
-    const rDay = Utilities.formatDate(rd, 'Asia/Bangkok', 'yyyy-MM-dd')
-
-    const item = {
-      bookingId: row[col['booking_id']],
-      cameraName: row[col['camera_name']] || row[col['camera_id']],
-      pickupTime: Utilities.formatDate(pd, 'Asia/Bangkok', 'HH:mm'),
-      returnTime: Utilities.formatDate(rd, 'Asia/Bangkok', 'HH:mm'),
-      pickupDate: pDay,
-      returnDate: rDay,
-      customerName: row[col['customer_name']],
-      customerPhone: String(row[col['customer_phone']]),
-      customerIG: row[col['customer_ig']] || '',
-      pickupType: row[col['pickup_type']],
-      returnType: row[col['return_type']],
-      pickupAddress: row[col['pickup_address']] || '',
-      returnAddress: row[col['return_address']] || '',
-      status: row[col['booking_status']],
-    }
-
-    if (pDay === date) pickups.push(item)
-    if (rDay === date) returns.push(item)
-    if (pDay < date && rDay > date) active.push(item)
+    if (item.pickupDate === date) pickups.push(item)
+    if (item.returnDate === date) returns.push(item)
+    if (item.pickupDate < date && item.returnDate > date) active.push(item)
   }
 
   pickups.sort(function (a, b) { return a.pickupTime < b.pickupTime ? -1 : 1 })
@@ -469,31 +649,11 @@ function getUpcomingQueue(pin) {
     if (!row[col['booking_id']]) continue
     if (row[col['booking_status']] === 'cancelled') continue
 
-    const pd = new Date(row[col['pickup_datetime']])
-    const rd = new Date(row[col['return_datetime']])
-    if (isNaN(pd.getTime()) || isNaN(rd.getTime())) continue
+    const item = buildQueueItem(row, col)
+    if (!item) continue
 
-    const pDay = Utilities.formatDate(pd, 'Asia/Bangkok', 'yyyy-MM-dd')
-    const rDay = Utilities.formatDate(rd, 'Asia/Bangkok', 'yyyy-MM-dd')
-
-    const item = {
-      bookingId: row[col['booking_id']],
-      cameraName: row[col['camera_name']] || row[col['camera_id']],
-      pickupTime: Utilities.formatDate(pd, 'Asia/Bangkok', 'HH:mm'),
-      returnTime: Utilities.formatDate(rd, 'Asia/Bangkok', 'HH:mm'),
-      pickupDate: pDay,
-      returnDate: rDay,
-      customerName: row[col['customer_name']],
-      customerIG: row[col['customer_ig']] || '',
-      pickupType: row[col['pickup_type']],
-      returnType: row[col['return_type']],
-      pickupAddress: row[col['pickup_address']] || '',
-      returnAddress: row[col['return_address']] || '',
-      status: row[col['booking_status']],
-    }
-
-    if (pDay >= today) bucket(pDay).pickups.push(item)
-    if (rDay >= today) bucket(rDay).returns.push(item)
+    if (item.pickupDate >= today) bucket(item.pickupDate).pickups.push(item)
+    if (item.returnDate >= today) bucket(item.returnDate).returns.push(item)
   }
 
   const days = Object.keys(byDay).sort().map(function (k) {
@@ -589,11 +749,14 @@ function updateBookingStatus(bookingId, status, pin) {
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
 
+  ensureColumns(sheet, BOOKING_HEADERS) // guarantee the returned_at column exists
+
   const data = sheet.getDataRange().getValues()
   const h = data[0]
   const iId = h.indexOf('booking_id')
   const iStatus = h.indexOf('booking_status')
   const iPayment = h.indexOf('payment_status')
+  const iReturnedAt = h.indexOf('returned_at')
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== String(bookingId)) continue
@@ -606,6 +769,15 @@ function updateBookingStatus(bookingId, status, pin) {
     }
     if (status === 'returned') {
       sheet.getRange(i + 1, iStatus + 1).setBackground('#ede9fe')
+      // Timestamp the moment the unit is physically back — readBookingSlotsAll
+      // uses this to free the queue right away instead of waiting out the buffer.
+      if (iReturnedAt >= 0) {
+        sheet.getRange(i + 1, iReturnedAt + 1).setValue(new Date().toISOString())
+      }
+    } else if (iReturnedAt >= 0 && data[i][iReturnedAt]) {
+      // Admin walked the status back (e.g. returned → active by mistake): clear
+      // the timestamp so the queue doesn't stay free while the unit is still out.
+      sheet.getRange(i + 1, iReturnedAt + 1).setValue('')
     }
     return { success: true }
   }
@@ -636,7 +808,7 @@ function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
 
-  ensureBlockedQuantityColumn(sheet)
+  ensureColumns(sheet, BLOCKED_HEADERS)
 
   // 'ALL' always means "take every unit of every model off the market" —
   // must cover the model with the most units (930 IS has 2) or that model's
@@ -646,17 +818,32 @@ function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
     ? Math.max.apply(null, Object.keys(CAMERA_QUANTITY).map(function (k) { return CAMERA_QUANTITY[k] }))
     : Math.max(1, Math.min(Number(requestedQuantity) || 1, CAMERA_QUANTITY[cameraId] || 1))
 
-  const id = 'BLK-' + Date.now()
-  sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString(), quantity])
-  return { success: true, id }
+  // Same global lock createBooking uses — a block added mid-booking must be
+  // visible to that booking's capacity check, not race past it.
+  const lock = LockService.getScriptLock()
+  try {
+    lock.waitLock(20000)
+  } catch (e) {
+    return { error: 'ระบบกำลังยุ่ง กรุณาลองอีกครั้ง' }
+  }
+  try {
+    const id = 'BLK-' + Date.now()
+    sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString(), quantity])
+    SpreadsheetApp.flush()
+    return { success: true, id }
+  } finally {
+    lock.releaseLock()
+  }
 }
 
-function ensureBlockedQuantityColumn(sheet) {
+// Adds any header names from `headers` that the sheet's row 1 is missing yet,
+// appended at the end — safe to run on live sheets created before a column existed.
+function ensureColumns(sheet, headers) {
   const lastCol = sheet.getLastColumn()
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
-  if (headers.indexOf('quantity') === -1) {
-    sheet.getRange(1, lastCol + 1).setValue('quantity')
-  }
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+  const missing = headers.filter(function (h) { return existing.indexOf(h) === -1 })
+  if (missing.length === 0) return
+  sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing])
 }
 
 function listBlockedSlots(pin) {
@@ -785,28 +972,50 @@ function sendLineNotify(bookingId, data, discountAmount) {
     .filter((id) => id)
   if (!token || userIds.length === 0) return
 
-  const pickup = Utilities.formatDate(new Date(data.pickupDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
-  const ret = Utilities.formatDate(new Date(data.returnDatetime), 'Asia/Bangkok', 'dd/MM HH:mm')
+  const isProvincial = data.rentalArea === 'provincial'
+  const dateFmt = isProvincial ? 'dd/MM/yyyy' : 'dd/MM HH:mm'
+  const pickup = Utilities.formatDate(new Date(data.pickupDatetime), 'Asia/Bangkok', dateFmt)
+  const ret = Utilities.formatDate(new Date(data.returnDatetime), 'Asia/Bangkok', dateFmt)
   const camName = CAMERA_NAMES[data.cameraId] || data.cameraId
   const discount = discountAmount > 0 ? `\n🏷️ ส่วนลด: -${discountAmount} ฿ (${data.discountCode})` : ''
 
-  const pickupLine = '🛵 รับ: ' + (data.pickupType === 'delivery'
-    ? 'Delivery → ' + (data.pickupAddress || '(ไม่ระบุที่อยู่)')
-    : 'รับเอง')
-  const returnLine = '📦 คืน: ' + (data.returnType === 'delivery'
-    ? 'Delivery → ' + (data.returnAddress || '(ไม่ระบุที่อยู่)')
-    : 'คืนเอง')
+  let logisticsLines
+  if (isProvincial) {
+    const noticeDeadline = new Date(new Date(data.returnDatetime).getTime() + 24 * 60 * 60 * 1000)
+    const noticeDate = Utilities.formatDate(noticeDeadline, 'Asia/Bangkok', 'dd/MM/yyyy')
+    const shipOutBy = new Date(new Date(data.pickupDatetime).getTime() - PROVINCIAL_SHIP_BUFFER_MS)
+    const shipOutDate = Utilities.formatDate(shipOutBy, 'Asia/Bangkok', 'dd/MM/yyyy')
+    logisticsLines = [
+      '🚚 ต่างจังหวัด (ส่งพัสดุ)',
+      '📮 ร้านต้องส่งพัสดุภายใน ' + shipOutDate,
+      '🏠 ' + (data.shippingAddress || '(ไม่ระบุที่อยู่)') +
+        (data.shippingSubdistrict ? ' ต.' + data.shippingSubdistrict : '') +
+        ' อ./เขต ' + (data.shippingDistrict || '-') +
+        ' จ.' + (data.shippingProvince || '-') +
+        ' ' + (data.shippingPostalCode || '-'),
+      '⏰ ต้องแจ้งเลขพัสดุคืนในแชทก่อนเที่ยง ' + noticeDate,
+    ]
+  } else {
+    logisticsLines = [
+      '🛵 รับ: ' + (data.pickupType === 'delivery'
+        ? 'Delivery → ' + (data.pickupAddress || '(ไม่ระบุที่อยู่)')
+        : 'รับเอง'),
+      '📦 คืน: ' + (data.returnType === 'delivery'
+        ? 'Delivery → ' + (data.returnAddress || '(ไม่ระบุที่อยู่)')
+        : 'คืนเอง'),
+    ]
+  }
 
   const msg = [
     '📸 จองใหม่! ' + bookingId,
     '📷 ' + camName,
-    '📅 รับ: ' + pickup + ' → คืน: ' + ret,
+    isProvincial
+      ? '📅 พัสดุถึงมือลูกค้า: ' + pickup + ' → ส่งคืน: ' + ret + ' (ก่อน 12:00 น.)'
+      : '📅 รับ: ' + pickup + ' → คืน: ' + ret,
     '👤 ' + data.customerName + ' | ' + data.customerPhone +
       (data.customerIG ? ' | IG/LINE: ' + data.customerIG : ''),
     '💰 ' + data.totalAmount + ' ฿' + discount,
-    pickupLine,
-    returnLine,
-  ].join('\n')
+  ].concat(logisticsLines).join('\n')
 
   // Single recipient uses push; 2+ recipients use multicast
   const endpoint = userIds.length === 1

@@ -136,3 +136,11 @@ export function hasCapacityConflict(
 
 export const DELIVERY_LOCATION = 'หอพักเมธาเรสสิเดนท์ 3'
 export const PROMPTPAY_NUMBER = '0981016683'
+
+// Provincial (ต่างจังหวัด) rentals: flat shipping fee covering both legs, and a
+// 3-day minimum since the unit needs to ship out and back either way.
+export const PROVINCIAL_SHIPPING_FEE = 50
+export const MIN_PROVINCIAL_DURATION_HOURS = 72
+// Earliest a customer can pick as their start day — the shop needs this many
+// days of lead time to ship the unit out before it's due to arrive.
+export const PROVINCIAL_SHIP_LEAD_DAYS = 3

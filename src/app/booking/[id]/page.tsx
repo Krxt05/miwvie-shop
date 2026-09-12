@@ -2,10 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { format } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, Clock, CheckCircle, Package, RotateCcw, XCircle, RefreshCw } from 'lucide-react'
 import { getBooking } from '@/lib/api'
+import { PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import { Booking } from '@/types'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -118,34 +119,56 @@ export default function BookingStatusPage() {
               </div>
 
               <Row label="กล้อง" value={String(booking.cameraId)} />
+              <Row label="พื้นที่" value={booking.rentalArea === 'provincial' ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
+              {booking.rentalArea === 'provincial' && booking.pickupDatetime && (
+                <Row
+                  label="ร้านส่งพัสดุ"
+                  value={format(addDays(new Date(booking.pickupDatetime), -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })}
+                />
+              )}
               <Row
-                label="รับกล้อง"
+                label={booking.rentalArea === 'provincial' ? 'พัสดุถึงมือ' : 'รับกล้อง'}
                 value={
                   booking.pickupDatetime
-                    ? format(new Date(booking.pickupDatetime), 'd MMM yyyy HH:mm', { locale: th }) + ' น.'
+                    ? format(new Date(booking.pickupDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? '' : ' น.')
                     : '-'
                 }
               />
               <Row
-                label="คืนกล้อง"
+                label={booking.rentalArea === 'provincial' ? 'ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)' : 'คืนกล้อง'}
                 value={
                   booking.returnDatetime
-                    ? format(new Date(booking.returnDatetime), 'd MMM yyyy HH:mm', { locale: th }) + ' น.'
+                    ? format(new Date(booking.returnDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? ' ก่อน 12:00 น.' : ' น.')
                     : '-'
                 }
               />
-              <Row
-                label="รับเครื่อง"
-                value={booking.pickupType === 'self' ? 'รับเอง (ฟรี)' : `Delivery → ${booking.pickupAddress}`}
-              />
-              <Row
-                label="คืนเครื่อง"
-                value={
-                  booking.returnType === 'self'
-                    ? 'คืนเอง (ฟรี)'
-                    : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
-                }
-              />
+              {booking.rentalArea === 'provincial' ? (
+                <>
+                  <Row
+                    label="ที่อยู่จัดส่ง"
+                    value={`${booking.shippingAddress} ต.${booking.shippingSubdistrict} อ./เขต ${booking.shippingDistrict} จ.${booking.shippingProvince} ${booking.shippingPostalCode}`}
+                  />
+                  <Row
+                    label="แจ้งเลขพัสดุภายใน"
+                    value={booking.returnDatetime ? `เที่ยงวันที่ ${format(addDays(new Date(booking.returnDatetime), 1), 'd MMM yyyy', { locale: th })}` : '-'}
+                  />
+                </>
+              ) : (
+                <>
+                  <Row
+                    label="รับเครื่อง"
+                    value={booking.pickupType === 'self' ? 'รับเอง (ฟรี)' : `Delivery → ${booking.pickupAddress}`}
+                  />
+                  <Row
+                    label="คืนเครื่อง"
+                    value={
+                      booking.returnType === 'self'
+                        ? 'คืนเอง (ฟรี)'
+                        : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
+                    }
+                  />
+                </>
+              )}
 
               <div className="border-t border-pink-100 pt-3 flex justify-between font-bold text-pink">
                 <span>ยอดชำระ</span>

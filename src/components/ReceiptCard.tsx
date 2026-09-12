@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { format } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ExternalLink, Camera } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
@@ -18,12 +18,14 @@ export default function ReceiptCard({ bookingId, form }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const receiptRef = useRef<HTMLDivElement>(null)
 
+  const isProvincial = form.rentalArea === 'provincial'
   const camera = CAMERAS.find((c) => c.id === form.cameraId)!
   const basePrice = calcPrice(camera.priceGroup, form.durationHours)
   const discountAmount = form.discountAmount ?? 0
   const price = basePrice - discountAmount
-  const deliveryFee = calcDeliveryFee(form.pickupType, form.returnType)
+  const deliveryFee = isProvincial ? PROVINCIAL_SHIPPING_FEE : calcDeliveryFee(form.pickupType, form.returnType)
   const total = price + deliveryFee
+  const dateFmt = isProvincial ? 'd MMM yy' : 'd MMM yy HH:mm'
 
   useEffect(() => {
     async function genQR() {
@@ -68,30 +70,46 @@ export default function ReceiptCard({ bookingId, form }: Props) {
 
         {/* Booking details */}
         <div className="px-6 py-4 space-y-2 text-sm border-b border-dashed border-pink-200">
+          <Row label="พื้นที่" value={isProvincial ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
           <Row label="กล้อง" value={camera.name} highlight />
+          {isProvincial && (
+            <Row
+              label="ร้านส่งพัสดุ"
+              value={format(addDays(form.pickupDatetime, -PROVINCIAL_SHIP_LEAD_DAYS), dateFmt, { locale: th })}
+            />
+          )}
           <Row
-            label="รับ"
-            value={format(form.pickupDatetime, 'd MMM yy HH:mm', { locale: th }) + ' น.'}
+            label={isProvincial ? 'พัสดุถึงมือ' : 'รับ'}
+            value={format(form.pickupDatetime, dateFmt, { locale: th }) + (isProvincial ? '' : ' น.')}
           />
           <Row
-            label="คืน"
-            value={format(form.returnDatetime, 'd MMM yy HH:mm', { locale: th }) + ' น.'}
+            label={isProvincial ? 'ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)' : 'คืน'}
+            value={format(form.returnDatetime, dateFmt, { locale: th }) + (isProvincial ? ' ก่อน 12:00 น.' : ' น.')}
           />
-          <Row
-            label="รับ/คืน"
-            value={`${form.pickupType === 'self' ? 'รับเอง' : 'Delivery'} / ${form.returnType === 'self' ? 'คืนเอง' : 'Delivery'}`}
-          />
-          {(() => {
-            const pu = form.pickupType === 'delivery' ? form.pickupAddress : ''
-            const ru = form.returnType === 'delivery' ? form.returnAddress : ''
-            if (pu && ru && pu === ru) return <AddressRow label="ที่อยู่จัดส่ง" value={pu} />
-            return (
-              <>
-                {pu && <AddressRow label="ที่อยู่รับ" value={pu} />}
-                {ru && <AddressRow label="ที่อยู่คืน" value={ru} />}
-              </>
-            )
-          })()}
+          {isProvincial ? (
+            <>
+              <Row
+                label="ที่อยู่จัดส่ง"
+                value={`${form.shippingAddress} ต.${form.shippingSubdistrict} อ./เขต ${form.shippingDistrict} จ.${form.shippingProvince} ${form.shippingPostalCode}`}
+              />
+              <Row
+                label="แจ้งเลขพัสดุภายใน"
+                value={`เที่ยงวันที่ ${format(addDays(form.returnDatetime, 1), 'd MMM yy', { locale: th })}`}
+              />
+            </>
+          ) : (
+            (() => {
+              const pu = form.pickupType === 'delivery' ? form.pickupAddress : ''
+              const ru = form.returnType === 'delivery' ? form.returnAddress : ''
+              if (pu && ru && pu === ru) return <AddressRow label="ที่อยู่จัดส่ง" value={pu} />
+              return (
+                <>
+                  {pu && <AddressRow label="ที่อยู่รับ" value={pu} />}
+                  {ru && <AddressRow label="ที่อยู่คืน" value={ru} />}
+                </>
+              )
+            })()
+          )}
           <Row label="ชื่อ" value={form.customerName} />
         </div>
 
@@ -104,7 +122,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
             <Row label={`ส่วนลด 10% (${form.discountCode})`} value={`-${discountAmount.toLocaleString()} ฿`} highlight accent="emerald" />
           )}
           {deliveryFee > 0 && (
-            <Row label="ค่าจัดส่ง" value={`+${deliveryFee} ฿`} />
+            <Row label={isProvincial ? 'ค่าส่ง (ขาไป)' : 'ค่าจัดส่ง'} value={`+${deliveryFee} ฿`} />
           )}
           <div className="flex justify-between items-baseline mt-1">
             <span className="text-gray-800 font-bold text-sm">ยอดชำระ</span>

@@ -12,6 +12,7 @@ export interface PriceTable {
   day7: number
 }
 export type DeliveryType = 'self' | 'delivery'
+export type RentalArea = 'local' | 'provincial'
 export type PaymentStatus = 'pending' | 'confirmed'
 export type BookingStatus = 'pending' | 'confirmed' | 'active' | 'returned' | 'cancelled'
 
@@ -36,6 +37,7 @@ export interface BookedSlot {
 
 export interface BookingFormData {
   cameraId: CameraId
+  rentalArea: RentalArea
   pickupDatetime: Date
   returnDatetime: Date
   durationHours: number
@@ -43,6 +45,11 @@ export interface BookingFormData {
   pickupAddress: string
   returnType: DeliveryType
   returnAddress: string
+  shippingAddress: string
+  shippingSubdistrict: string
+  shippingDistrict: string
+  shippingProvince: string
+  shippingPostalCode: string
   customerName: string
   customerPhone: string
   customerIG: string
@@ -61,4 +68,5 @@ export interface Booking extends BookingFormData {
   paymentStatus: PaymentStatus
   bookingStatus: BookingStatus
   adminNotes: string
+  returnedAt?: string  // ISO — set when admin marks the booking returned
 }

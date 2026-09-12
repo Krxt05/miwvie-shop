@@ -17,6 +17,9 @@ interface OccupancyRow {
   cameraId: CameraId
   start: string
   end: string
+  // provincial bookings: start/end already include the 3-day ship legs, and the
+  // calendar picks whole days (no meaningful time), so the tooltip drops times
+  kind?: 'local' | 'provincial' | 'block'
 }
 
 interface Props {
@@ -112,10 +115,16 @@ export default function BookingHeatmap({ rows }: Props) {
           if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) continue
           const startKey = bangkokKey(startDate)
           const endKey = bangkokKey(endDate)
+          // provincial windows and blocks have no meaningful clock time — label
+          // the marker by what it is instead of showing "00:00"
+          const startLabel =
+            r.kind === 'provincial' ? 'เริ่มกันคิว (ส่งพัสดุ)' : r.kind === 'block' ? 'บล็อกคิว' : bangkokTime(startDate)
+          const endLabel =
+            r.kind === 'provincial' ? 'สิ้นสุดกันคิว' : r.kind === 'block' ? 'บล็อกคิว' : bangkokTime(endDate)
           if (!starts.has(startKey)) starts.set(startKey, [])
-          starts.get(startKey)!.push(bangkokTime(startDate))
+          starts.get(startKey)!.push(startLabel)
           if (!ends.has(endKey)) ends.set(endKey, [])
-          ends.get(endKey)!.push(bangkokTime(endDate))
+          ends.get(endKey)!.push(endLabel)
           // walk day by day (bounded: rentals are short, never more than ~2 months)
           let cursor = startDate
           for (let j = 0; j < 60; j++) {
@@ -208,12 +217,13 @@ export default function BookingHeatmap({ rows }: Props) {
                 }
                 if (isToday) cellClass += 'ring-2 ring-pink ring-inset z-10 '
 
+                const withUnit = (label: string) => (/^\d/.test(label) ? `${label} น.` : label)
                 const lines = [
                   `${hr.label} — ${format(d, 'd MMM yyyy', { locale: th })}`,
                   isBusy ? 'ไม่ว่าง' : 'ว่าง',
                 ]
-                if (endTimes) lines.push(`คืนกล้อง ${endTimes.join(', ')} น.`)
-                if (startTimes) lines.push(`รับกล้อง ${startTimes.join(', ')} น.`)
+                if (endTimes) lines.push(`สิ้นสุด: ${endTimes.map(withUnit).join(', ')}`)
+                if (startTimes) lines.push(`เริ่ม: ${startTimes.map(withUnit).join(', ')}`)
 
                 return (
                   <button
@@ -236,9 +246,9 @@ export default function BookingHeatmap({ rows }: Props) {
       <div className="flex items-center gap-4 flex-wrap text-[11px] text-gray-500 pt-1 border-t border-pink-100">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-50 border border-gray-200" />ว่าง</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-200" />ไม่ว่าง</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: PICKUP_COLOR }} />รับกล้อง</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: RETURN_COLOR }} />คืนกล้อง</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: `linear-gradient(to right, ${RETURN_COLOR} 50%, ${PICKUP_COLOR} 50%)` }} />คืน+รับวันเดียวกัน</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: PICKUP_COLOR }} />วันเริ่มคิว</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: RETURN_COLOR }} />วันสิ้นสุดคิว</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{ background: `linear-gradient(to right, ${RETURN_COLOR} 50%, ${PICKUP_COLOR} 50%)` }} />สิ้นสุด+เริ่มวันเดียวกัน</span>
       </div>
 
       {tooltip && (

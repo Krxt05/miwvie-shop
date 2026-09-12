@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { format } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import {
   Lock, RefreshCw, ChevronDown, ChevronUp, ExternalLink,
@@ -13,14 +13,17 @@ import {
   blockDates, listBlockedSlots, deleteBlockedSlot, BlockedSlot,
 } from '@/lib/api'
 import { Booking, BookingStatus, CameraId } from '@/types'
-import { CAMERAS } from '@/lib/cameras'
+import { CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import BookingHeatmap from '@/components/BookingHeatmap'
 
 const STATUS_ACTIONS: Record<string, { next: BookingStatus; label: string; icon: React.ElementType }[]> = {
   pending: [{ next: 'confirmed', label: 'ยืนยันรับเงิน', icon: CheckCircle }],
-  confirmed: [{ next: 'active', label: 'ส่งกล้องแล้ว', icon: Package }],
+  confirmed: [
+    { next: 'active', label: 'ส่งกล้องแล้ว', icon: Package },
+    { next: 'returned', label: 'รับคืนแล้ว', icon: RotateCcw },
+  ],
   active: [{ next: 'returned', label: 'รับคืนแล้ว', icon: RotateCcw }],
   returned: [],
   cancelled: [],
@@ -168,13 +171,62 @@ export default function AdminPage() {
       .reduce((s, b) => s + Number(b.totalAmount), 0),
   }
 
-  const occupancyRows = [
+  const DAY_MS = 24 * 60 * 60 * 1000
+  const HOUR_MS = 60 * 60 * 1000
+
+  const occupancyRows: {
+    cameraId: CameraId
+    start: string
+    end: string
+    kind: 'local' | 'provincial' | 'block'
+  }[] = [
+    // Bookings — provincial ones tie the unit up for the ship-out and ship-back
+    // legs too, so widen the window by the lead time on each side to match the
+    // real availability the calendar enforces. A booking already marked returned
+    // frees up from that moment (mirrors readBookingSlotsAll on the backend).
     ...bookings
       .filter((b) => b.bookingStatus !== 'cancelled')
-      .map((b) => ({ cameraId: b.cameraId, start: String(b.pickupDatetime), end: String(b.returnDatetime) })),
-    ...blockedSlots
-      .filter((b) => b.cameraId !== 'ALL')
-      .map((b) => ({ cameraId: b.cameraId as CameraId, start: b.startDatetime, end: b.endDatetime })),
+      .map((b) => {
+        const isProv = b.rentalArea === 'provincial'
+        const pad = isProv ? PROVINCIAL_SHIP_LEAD_DAYS * DAY_MS : 0
+        const rawStart = new Date(String(b.pickupDatetime)).getTime()
+        let start: number
+        let end: number
+        if (isProv && b.bookingStatus === 'returned' && b.returnedAt) {
+          // Mirror readBookingSlotsAll: once the unit is back, both ship legs are
+          // done — drop the ship-out pad on the front and end at the actual
+          // return moment, clamping so the window never inverts.
+          start = rawStart
+          end = new Date(b.returnedAt).getTime() + HOUR_MS
+          if (end < start) start = end
+        } else {
+          start = rawStart - pad
+          end = new Date(String(b.returnDatetime)).getTime() + pad
+        }
+        return {
+          cameraId: b.cameraId,
+          start: new Date(start).toISOString(),
+          end: new Date(end).toISOString(),
+          kind: isProv ? ('provincial' as const) : ('local' as const),
+        }
+      }),
+    // Blocks — a block that covers N units of a model needs N rows so every unit
+    // shows busy; an 'ALL' block applies to every model (capped at its stock).
+    ...blockedSlots.flatMap((b) => {
+      const targets =
+        b.cameraId === 'ALL'
+          ? CAMERAS
+          : CAMERAS.filter((c) => c.id === b.cameraId)
+      return targets.flatMap((cam) => {
+        const units = Math.min(b.quantity || 1, cam.quantity)
+        return Array.from({ length: units }, () => ({
+          cameraId: cam.id,
+          start: b.startDatetime,
+          end: b.endDatetime,
+          kind: 'block' as const,
+        }))
+      })
+    }),
   ]
 
   if (!authed) {
@@ -495,26 +547,48 @@ export default function AdminPage() {
                           <Detail label="โทร" value={String(b.customerPhone)} />
                           <Detail label="IG" value={String(b.customerIG) || '-'} />
                           <Detail label="กล้อง" value={String(b.cameraId)} />
+                          <Detail label="พื้นที่" value={b.rentalArea === 'provincial' ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
+                          {b.rentalArea === 'provincial' && b.pickupDatetime && (
+                            <Detail
+                              label="ร้านส่งพัสดุ"
+                              value={format(addDays(new Date(b.pickupDatetime), -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })}
+                            />
+                          )}
                           <Detail
-                            label="รับ"
-                            value={b.pickupDatetime ? format(new Date(b.pickupDatetime), 'd MMM yyyy HH:mm', { locale: th }) : '-'}
+                            label={b.rentalArea === 'provincial' ? 'พัสดุถึงมือ' : 'รับ'}
+                            value={b.pickupDatetime ? format(new Date(b.pickupDatetime), b.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) : '-'}
                           />
                           <Detail
-                            label="คืน"
-                            value={b.returnDatetime ? format(new Date(b.returnDatetime), 'd MMM yyyy HH:mm', { locale: th }) : '-'}
+                            label={b.rentalArea === 'provincial' ? 'ส่งคืน (ก่อน 12:00)' : 'คืน'}
+                            value={b.returnDatetime ? format(new Date(b.returnDatetime), b.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) : '-'}
                           />
-                          <Detail
-                            label="รับเครื่อง"
-                            value={b.pickupType === 'delivery' ? `Delivery → ${b.pickupAddress}` : 'รับเอง'}
-                          />
-                          <Detail
-                            label="คืนเครื่อง"
-                            value={
-                              b.returnType === 'delivery'
-                                ? `ให้ร้านรับ${b.returnAddress ? ` → ${b.returnAddress}` : ''}`
-                                : 'คืนเอง'
-                            }
-                          />
+                          {b.rentalArea === 'provincial' ? (
+                            <>
+                              <Detail
+                                label="ที่อยู่จัดส่ง"
+                                value={`${b.shippingAddress} ต.${b.shippingSubdistrict} อ./เขต ${b.shippingDistrict} จ.${b.shippingProvince} ${b.shippingPostalCode}`}
+                              />
+                              <Detail
+                                label="แจ้งเลขพัสดุภายใน"
+                                value={b.returnDatetime ? `เที่ยงวันที่ ${format(new Date(new Date(b.returnDatetime).getTime() + 86400000), 'd MMM yyyy', { locale: th })}` : '-'}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <Detail
+                                label="รับเครื่อง"
+                                value={b.pickupType === 'delivery' ? `Delivery → ${b.pickupAddress}` : 'รับเอง'}
+                              />
+                              <Detail
+                                label="คืนเครื่อง"
+                                value={
+                                  b.returnType === 'delivery'
+                                    ? `ให้ร้านรับ${b.returnAddress ? ` → ${b.returnAddress}` : ''}`
+                                    : 'คืนเอง'
+                                }
+                              />
+                            </>
+                          )}
                         </div>
 
                         {/* Discount info */}
@@ -549,6 +623,11 @@ export default function AdminPage() {
                         </div>
 
                         {/* Status actions */}
+                        {b.rentalArea === 'provincial' && b.bookingStatus !== 'returned' && b.bookingStatus !== 'cancelled' && (
+                          <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                            กด &ldquo;รับคืนแล้ว&rdquo; เมื่อพัสดุถึงร้านจริง (ไม่ใช่ตอนลูกค้าแจ้งเลขพัสดุ) — กดแล้วคิวจะว่างทันที
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2">
                           {actions.map(({ next, label, icon: Icon }) => (
                             <Button

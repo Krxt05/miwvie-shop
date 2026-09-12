@@ -137,16 +137,19 @@ function toISO(d: Date): string {
 interface QueueItem {
   bookingId: string
   cameraName: string
+  rentalArea?: 'local' | 'provincial'
   pickupTime: string
   returnTime: string
   pickupDate: string
   returnDate: string
+  deliveredDate?: string
   customerName: string
   customerIG: string
   pickupType: string
   returnType: string
   pickupAddress: string
   returnAddress: string
+  shippingAddress?: string
   status: string
 }
 interface DayQueue {
@@ -204,7 +207,19 @@ function shortName(name: string): string {
 
 // ---- รายวัน (วันนี้/พรุ่งนี้/วันที่) — ละเอียด ----
 
+const isProvincial = (it: QueueItem) => it.rentalArea === 'provincial'
+
 function pickupBlock(it: QueueItem): string {
+  if (isProvincial(it)) {
+    const lines = [
+      `🚚 ส่งพัสดุ  ${shortCam(it.cameraName)}`,
+      it.customerName,
+    ]
+    if (it.customerIG) lines.push(`IG ${it.customerIG}`)
+    lines.push(`📮 ${it.shippingAddress?.trim() || '(ไม่ระบุที่อยู่)'}`)
+    if (it.deliveredDate) lines.push(`📅 ให้ถึงมือลูกค้า ${dateLabel(it.deliveredDate, '')}`)
+    return lines.join('\n')
+  }
   const lines = [`${it.pickupTime}  ${shortCam(it.cameraName)}`, it.customerName]
   if (it.pickupType === 'delivery') {
     if (it.customerIG) lines.push(`IG ${it.customerIG}`)
@@ -216,6 +231,10 @@ function pickupBlock(it: QueueItem): string {
 }
 
 function returnBlock(it: QueueItem): string {
+  if (isProvincial(it)) {
+    const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
+    return `📦 ${shortCam(it.cameraName)} | ${it.customerName}${ig}\nลูกค้าส่งพัสดุคืน (ก่อน 12:00 น.)`
+  }
   const head = `${it.returnTime}  ${shortCam(it.cameraName)} | ${it.customerName}`
   if (it.returnType === 'delivery') {
     const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
@@ -237,7 +256,7 @@ function formatDay(rel: string, iso: string, q: DayQueue): string {
   const parts: string[] = [head, summary]
 
   if (q.pickups.length) {
-    parts.push('', '━━ 🛵 รับกล้อง ━━', '', q.pickups.map(pickupBlock).join('\n\n'))
+    parts.push('', '━━ 🛵 รับกล้อง / ส่งพัสดุ ━━', '', q.pickups.map(pickupBlock).join('\n\n'))
   }
   if (q.returns.length) {
     parts.push('', '━━ 📦 คืนกล้อง ━━', '', q.returns.map(returnBlock).join('\n\n'))
@@ -248,7 +267,12 @@ function formatDay(rel: string, iso: string, q: DayQueue): string {
       '━━ 🎥 กำลังเช่าอยู่ ━━',
       '',
       q.active
-        .map((it) => `${shortCam(it.cameraName)} | ${it.customerName}\nคืน ${dateLabel(it.returnDate, '')} ${it.returnTime}`)
+        .map((it) => {
+          const back = isProvincial(it)
+            ? `ลูกค้าส่งพัสดุคืน ${dateLabel(it.returnDate, '')}`
+            : `คืน ${dateLabel(it.returnDate, '')} ${it.returnTime}`
+          return `${shortCam(it.cameraName)} | ${it.customerName}\n${back}`
+        })
         .join('\n\n'),
     )
   }
@@ -265,12 +289,20 @@ function formatUpcoming(data: { today: string; days: DayGroup[] }): string[] {
   for (const d of data.days) {
     const lines = [`━ ${dateLabel(d.date, '')} · รับ ${d.pickups.length} | คืน ${d.returns.length} ━`]
     for (const it of d.pickups) {
-      const tag = it.pickupType === 'delivery' ? ' · ส่ง' : ''
-      lines.push(`🛵 ${it.pickupTime} ${shortCam(it.cameraName)} | ${shortName(it.customerName)}${tag}`)
+      if (isProvincial(it)) {
+        lines.push(`🚚 ส่งพัสดุ ${shortCam(it.cameraName)} | ${shortName(it.customerName)}`)
+      } else {
+        const tag = it.pickupType === 'delivery' ? ' · ส่ง' : ''
+        lines.push(`🛵 ${it.pickupTime} ${shortCam(it.cameraName)} | ${shortName(it.customerName)}${tag}`)
+      }
     }
     for (const it of d.returns) {
-      const tag = it.returnType === 'delivery' ? ' · ร้านรับ' : ''
-      lines.push(`📦 ${it.returnTime} ${shortCam(it.cameraName)} | ${shortName(it.customerName)}${tag}`)
+      if (isProvincial(it)) {
+        lines.push(`📦 พัสดุคืน ${shortCam(it.cameraName)} | ${shortName(it.customerName)}`)
+      } else {
+        const tag = it.returnType === 'delivery' ? ' · ร้านรับ' : ''
+        lines.push(`📦 ${it.returnTime} ${shortCam(it.cameraName)} | ${shortName(it.customerName)}${tag}`)
+      }
     }
     blocks.push(lines.join('\n'))
   }

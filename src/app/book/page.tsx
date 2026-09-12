@@ -3,17 +3,19 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
-import { addHours, format, differenceInHours } from 'date-fns'
+import { addDays, addHours, format, differenceInHours } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader } from 'lucide-react'
-import { CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE } from '@/lib/cameras'
+import {
+  CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE,
+  PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
+} from '@/lib/cameras'
 import { getAvailability, createBooking, validateDiscountCode } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
+import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
 import Button from '@/components/ui/Button'
-import { BookedSlot, BookingFormData, CameraId, DeliveryType } from '@/types'
-
-const STEPS = ['เลือกกล้อง', 'เลือกวัน-เวลา', 'รับ-คืน', 'ข้อมูลส่วนตัว', 'ยืนยัน']
+import { BookedSlot, BookingFormData, CameraId, DeliveryType, RentalArea } from '@/types'
 
 const DURATION_OPTIONS = [
   { hours: 6, label: '6 ชั่วโมง' },
@@ -26,6 +28,19 @@ const DURATION_OPTIONS = [
   { hours: 168, label: '7 วัน' },
 ]
 
+function formatBookingDate(date: Date, area: RentalArea): string {
+  return area === 'provincial'
+    ? format(date, 'd MMM yyyy', { locale: th })
+    : format(date, 'd MMM yyyy HH:mm', { locale: th }) + ' น.'
+}
+
+// Provincial (ต่างจังหวัด) rental is built but can be paused — flip this to false
+// to re-hide it, no other changes needed. Step indices are derived per-flow
+// inside the component (see stepMap): the local flow keeps its own "รับ-คืน"
+// step, while the provincial flow folds the shipping address into the
+// personal-info step, so it runs one step shorter.
+const PROVINCIAL_ENABLED = true
+
 function BookPage() {
   const params = useSearchParams()
   const router = useRouter()
@@ -33,6 +48,11 @@ function BookPage() {
   const [step, setStep] = useState(0)
   const [cameraId, setCameraId] = useState<CameraId | null>(
     (params.get('camera') as CameraId) ?? null,
+  )
+  // Never pre-pick an area when the choice is live — the customer has to make it
+  // themselves, even when they deep-linked in with a camera already chosen.
+  const [rentalArea, setRentalArea] = useState<RentalArea | null>(
+    PROVINCIAL_ENABLED ? null : 'local',
   )
   const [durationHours, setDurationHours] = useState(24)
   const [pickupDatetime, setPickupDatetime] = useState<Date | null>(null)
@@ -43,6 +63,11 @@ function BookPage() {
   const [returnType, setReturnType] = useState<DeliveryType>('self')
   const [returnSameAsPickup, setReturnSameAsPickup] = useState(true)
   const [returnAddress, setReturnAddress] = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
+  const [shippingSubdistrict, setShippingSubdistrict] = useState('')
+  const [shippingDistrict, setShippingDistrict] = useState('')
+  const [shippingProvince, setShippingProvince] = useState('')
+  const [shippingPostalCode, setShippingPostalCode] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerIG, setCustomerIG] = useState('')
@@ -59,6 +84,32 @@ function BookPage() {
   const [customDays, setCustomDays] = useState(8)
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
+  const isProvincial = rentalArea === 'provincial'
+
+  // Step indices per flow. -1 = the step doesn't exist in this flow.
+  // Provincial has no standalone address step — the shipping fields live in INFO.
+  const stepMap = !PROVINCIAL_ENABLED
+    ? { AREA: -1, CAMERA: 0, DATE: 1, ADDRESS: 2, INFO: 3, CONFIRM: 4, RECEIPT: 5 }
+    : isProvincial
+    ? { AREA: 0, CAMERA: 1, DATE: 2, ADDRESS: -1, INFO: 3, CONFIRM: 4, RECEIPT: 5 }
+    : { AREA: 0, CAMERA: 1, DATE: 2, ADDRESS: 3, INFO: 4, CONFIRM: 5, RECEIPT: 6 }
+  const STEP_AREA = stepMap.AREA
+  const STEP_CAMERA = stepMap.CAMERA
+  const STEP_DATE = stepMap.DATE
+  const STEP_ADDRESS = stepMap.ADDRESS
+  const STEP_INFO = stepMap.INFO
+  const STEP_CONFIRM = stepMap.CONFIRM
+  const STEP_RECEIPT = stepMap.RECEIPT
+
+  const STEPS = !PROVINCIAL_ENABLED
+    ? ['เลือกกล้อง', 'เลือกวัน-เวลา', 'รับ-คืน', 'ข้อมูลส่วนตัว', 'ยืนยัน']
+    : isProvincial
+    ? ['พื้นที่เช่า', 'เลือกกล้อง', 'เลือกวัน', 'ข้อมูลผู้เช่า', 'ยืนยัน']
+    : ['พื้นที่เช่า', 'เลือกกล้อง', 'เลือกวัน-เวลา', 'รับ-คืน', 'ข้อมูลส่วนตัว', 'ยืนยัน']
+
+  const durationOptions = isProvincial
+    ? DURATION_OPTIONS.filter((o) => o.hours >= MIN_PROVINCIAL_DURATION_HOURS)
+    : DURATION_OPTIONS
 
   const fetchedMonthsRef = useRef<Set<string>>(new Set())
 
@@ -82,9 +133,32 @@ function BookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
 
+  // Deep link from the home page (/book?camera=X) preselects the camera. With
+  // the provincial option live we must NOT skip past the area step, or everyone
+  // arriving from a camera card would silently be locked into a local rental —
+  // so only jump ahead when there is no area to choose.
   useEffect(() => {
-    if (cameraId && params.get('camera')) setStep(1)
+    if (cameraId && params.get('camera') && !PROVINCIAL_ENABLED) setStep(STEP_DATE)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function handleAreaSelect(area: RentalArea) {
+    setRentalArea(area)
+    setPickupDatetime(null)
+    setReturnDatetime(null)
+    if (area === 'provincial' && durationHours < MIN_PROVINCIAL_DURATION_HOURS) {
+      setDurationHours(MIN_PROVINCIAL_DURATION_HOURS)
+    }
+  }
+
+  // A date picked for one camera is meaningless for another (different stock,
+  // different bookings) — clear it so the calendar always starts fresh and the
+  // picker remounts (via key={cameraId} below) instead of showing a stale month.
+  function handleCameraSelect(id: CameraId) {
+    setCameraId(id)
+    setPickupDatetime(null)
+    setReturnDatetime(null)
+  }
 
   function handlePickupSelect(dt: Date) {
     setPickupDatetime(dt)
@@ -132,16 +206,24 @@ function BookPage() {
 
   function validateStep(): boolean {
     const errs: Record<string, string> = {}
-    if (step === 0 && !cameraId) errs.camera = 'กรุณาเลือกกล้อง'
-    if (step === 1) {
-      if (!pickupDatetime) errs.pickup = 'กรุณาเลือกวันและเวลารับ'
+    if (step === STEP_AREA && !rentalArea) errs.area = 'กรุณาเลือกพื้นที่เช่า'
+    if (step === STEP_CAMERA && !cameraId) errs.camera = 'กรุณาเลือกกล้อง'
+    if (step === STEP_DATE) {
+      if (!pickupDatetime) errs.pickup = isProvincial ? 'กรุณาเลือกวันเริ่มเช่า' : 'กรุณาเลือกวันและเวลารับ'
       else if (selectionConflict) errs.pickup = 'ช่วงเวลาที่เลือกซ้อนทับกับการจองอื่น กรุณาเลือกเวลาใหม่'
     }
-    if (step === 2) {
+    if (step === STEP_ADDRESS && !isProvincial) {
       if (pickupType === 'delivery' && !pickupAddress) errs.pickupAddr = 'กรุณาระบุที่อยู่รับ'
       if (returnType === 'delivery' && !effectiveReturnAddress) errs.returnAddr = 'กรุณาระบุที่อยู่คืน'
     }
-    if (step === 3) {
+    if (step === STEP_INFO) {
+      if (isProvincial) {
+        if (!shippingAddress.trim()) errs.shippingAddress = 'กรุณาระบุที่อยู่'
+        if (!shippingSubdistrict.trim()) errs.shippingSubdistrict = 'กรุณาระบุตำบล/แขวง'
+        if (!shippingDistrict.trim()) errs.shippingDistrict = 'กรุณาระบุอำเภอ/เขต'
+        if (!shippingProvince.trim()) errs.shippingProvince = 'กรุณาระบุจังหวัด'
+        if (!/^\d{5}$/.test(shippingPostalCode.trim())) errs.shippingPostalCode = 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก'
+      }
       if (!customerName) errs.name = 'กรุณาระบุชื่อ'
       if (!customerPhone) errs.phone = 'กรุณาระบุเบอร์โทร'
       if (!idCardImage) errs.idCard = 'กรุณาอัปโหลดบัตรประชาชน'
@@ -163,19 +245,25 @@ function BookPage() {
   }
 
   async function handleSubmit() {
-    if (!camera || !cameraId || !pickupDatetime || !returnDatetime) return
+    if (!camera || !cameraId || !rentalArea || !pickupDatetime || !returnDatetime) return
     if (!validateStep()) return
     setSubmitting(true)
     try {
       const form: BookingFormData = {
         cameraId,
+        rentalArea,
         pickupDatetime,
         returnDatetime,
         durationHours,
-        pickupType,
-        pickupAddress,
-        returnType,
-        returnAddress: effectiveReturnAddress,
+        pickupType: isProvincial ? 'delivery' : pickupType,
+        pickupAddress: isProvincial ? '' : pickupAddress,
+        returnType: isProvincial ? 'delivery' : returnType,
+        returnAddress: isProvincial ? '' : effectiveReturnAddress,
+        shippingAddress: isProvincial ? shippingAddress : '',
+        shippingSubdistrict: isProvincial ? shippingSubdistrict : '',
+        shippingDistrict: isProvincial ? shippingDistrict : '',
+        shippingProvince: isProvincial ? shippingProvince : '',
+        shippingPostalCode: isProvincial ? shippingPostalCode : '',
         customerName,
         customerPhone,
         customerIG,
@@ -186,7 +274,7 @@ function BookPage() {
       }
       const { bookingId: id } = await createBooking(form)
       setBookingId(id)
-      setStep(5) // receipt step
+      setStep(STEP_RECEIPT)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
     } finally {
@@ -218,15 +306,15 @@ function BookPage() {
     returnType !== 'delivery' ? '' : returnUsesSame ? pickupAddress : returnAddress
 
   const price = camera ? calcPrice(camera.priceGroup, durationHours) : 0
-  const deliveryFee = calcDeliveryFee(pickupType, returnType)
+  const deliveryFee = isProvincial ? PROVINCIAL_SHIPPING_FEE : calcDeliveryFee(pickupType, returnType)
   const total = price - discountAmount + deliveryFee
 
   const selectionConflict = !!(pickupDatetime && returnDatetime && camera) &&
     hasCapacityConflict(
       bookedSlots.filter((slot) => slot.cameraId === cameraId),
       camera!.quantity,
-      pickupDatetime!,
-      returnDatetime!,
+      isProvincial ? addDays(pickupDatetime!, -PROVINCIAL_SHIP_LEAD_DAYS) : pickupDatetime!,
+      isProvincial ? addDays(returnDatetime!, PROVINCIAL_SHIP_LEAD_DAYS) : returnDatetime!,
     )
 
   return (
@@ -264,7 +352,7 @@ function BookPage() {
         </button>
 
         {/* Step indicator */}
-        {step < 5 && (
+        {step < STEPS.length && (
           <div className="flex items-center gap-1 mb-8 overflow-x-auto pb-2">
             {STEPS.map((s, i) => (
               <div key={s} className="flex items-center gap-1 shrink-0">
@@ -302,15 +390,38 @@ function BookPage() {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.25 }}
           >
-            {/* Step 0: Camera selection */}
-            {step === 0 && (
+            {/* Step 0: Rental area */}
+            {step === STEP_AREA && (
+              <div>
+                <h1 className="text-2xl font-bold mb-2">เลือกพื้นที่เช่า</h1>
+                <p className="text-gray-400 text-sm mb-6">เลือกก่อนว่าอยู่ในพื้นที่ มมส. หรือให้จัดส่งไปต่างจังหวัด</p>
+                <div className="space-y-3">
+                  <OptionCard
+                    selected={rentalArea === 'local'}
+                    onClick={() => handleAreaSelect('local')}
+                    title="ในพื้นที่ มมส."
+                    sub="รับ-คืนเองหรือ Delivery ในมมส. ม.ใหม่ เลือกวัน-เวลาได้อิสระ"
+                  />
+                  <OptionCard
+                    selected={rentalArea === 'provincial'}
+                    onClick={() => handleAreaSelect('provincial')}
+                    title="ส่งต่างจังหวัด (ทั่วประเทศ)"
+                    sub={`เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน · ค่าส่งขาไป ${PROVINCIAL_SHIPPING_FEE}฿ (ขากลับลูกค้าส่งเอง) · ต้องจองล่วงหน้า ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`}
+                  />
+                </div>
+                {errors.area && <p className="text-pink text-sm mt-2">{errors.area}</p>}
+              </div>
+            )}
+
+            {/* Step 1: Camera selection */}
+            {step === STEP_CAMERA && (
               <div>
                 <h1 className="text-2xl font-bold mb-6">เลือกกล้อง</h1>
                 <div className="grid grid-cols-1 gap-3">
                   {CAMERAS.map((cam) => (
                     <button
                       key={cam.id}
-                      onClick={() => setCameraId(cam.id)}
+                      onClick={() => handleCameraSelect(cam.id)}
                       className={`glass rounded-xl p-4 flex items-center gap-4 text-left transition-all ${
                         cameraId === cam.id
                           ? 'border-pink shadow-pink-glow-sm'
@@ -347,8 +458,8 @@ function BookPage() {
               </div>
             )}
 
-            {/* Step 1: Date & time */}
-            {step === 1 && camera && (
+            {/* Step 2: Date & time */}
+            {step === STEP_DATE && camera && (
               <div>
                 {/* Camera preview header */}
                 <div className="glass rounded-xl p-4 flex items-center gap-4 mb-5">
@@ -382,14 +493,18 @@ function BookPage() {
                   </div>
                 )}
 
-                <h1 className="text-2xl font-bold mb-2">เลือกวันและเวลา</h1>
-                <p className="text-gray-400 text-sm mb-6">เลือกวันที่จากปฏิทิน แล้วเลือกเวลาจากรายการด้านล่าง</p>
+                <h1 className="text-2xl font-bold mb-2">{isProvincial ? 'เลือกวันเริ่มเช่า' : 'เลือกวันและเวลา'}</h1>
+                <p className="text-gray-400 text-sm mb-6">
+                  {isProvincial
+                    ? 'เลือกวันจากปฏิทิน คิดค่าเช่าเป็นรายวัน ไม่ต้องเลือกชั่วโมง'
+                    : 'เลือกวันที่จากปฏิทิน แล้วเลือกเวลาจากรายการด้านล่าง'}
+                </p>
 
                 {/* Duration */}
                 <div className="glass rounded-xl p-4 mb-5">
                   <p className="text-sm text-gray-500 mb-3">ระยะเวลาเช่า</p>
                   <div className="flex flex-wrap gap-2">
-                    {DURATION_OPTIONS.map((opt) => (
+                    {durationOptions.map((opt) => (
                       <button
                         key={opt.hours}
                         onClick={() => handleDurationChange(opt.hours)}
@@ -441,20 +556,41 @@ function BookPage() {
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-3">
-                    นับ 24 ชม. จากเวลารับจริง · เกิน 7 วัน +{EXTRA_DAY_RATE[camera.priceGroup]}฿/วัน
+                    {isProvincial
+                      ? `เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน · เกิน 7 วัน +${EXTRA_DAY_RATE[camera.priceGroup]}฿/วัน`
+                      : `นับ 24 ชม. จากเวลารับจริง · เกิน 7 วัน +${EXTRA_DAY_RATE[camera.priceGroup]}฿/วัน`}
                   </p>
                 </div>
 
-                {/* Timeline */}
-                <HourlyTimeline
-                  cameraId={cameraId!}
-                  quantity={camera.quantity}
-                  bookedSlots={bookedSlots}
-                  onSelectPickup={handlePickupSelect}
-                  selectedPickup={pickupDatetime}
-                  durationHours={durationHours}
-                  onMonthChange={fetchMonth}
-                />
+                {/* Calendar */}
+                {isProvincial ? (
+                  <>
+                    <p className="text-xs text-gray-400 mb-3 leading-relaxed">
+                      📦 วันที่เลือก = <span className="text-gray-500 font-medium">วันที่พัสดุถึงมือคุณ</span> ทางร้านจะส่งพัสดุล่วงหน้า {PROVINCIAL_SHIP_LEAD_DAYS} วัน
+                    </p>
+                    <DayRangePicker
+                      key={cameraId}
+                      cameraId={cameraId!}
+                      quantity={camera.quantity}
+                      bookedSlots={bookedSlots}
+                      durationHours={durationHours}
+                      onSelectPickup={handlePickupSelect}
+                      selectedPickup={pickupDatetime}
+                      onMonthChange={fetchMonth}
+                    />
+                  </>
+                ) : (
+                  <HourlyTimeline
+                    key={cameraId}
+                    cameraId={cameraId!}
+                    quantity={camera.quantity}
+                    bookedSlots={bookedSlots}
+                    onSelectPickup={handlePickupSelect}
+                    selectedPickup={pickupDatetime}
+                    durationHours={durationHours}
+                    onMonthChange={fetchMonth}
+                  />
+                )}
 
                 {pickupDatetime && returnDatetime && (
                   <motion.div
@@ -471,14 +607,33 @@ function BookPage() {
                         <span>⚠️</span> ช่วงเวลาซ้อนทับกับการจองอื่น กรุณาเลือกใหม่
                       </p>
                     )}
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">รับ</span>
-                      <span>{format(pickupDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">คืน</span>
-                      <span>{format(returnDatetime, 'd MMM yyyy HH:mm', { locale: th })} น.</span>
-                    </div>
+                    {isProvincial ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">ร้านส่งพัสดุ</span>
+                          <span>{format(addDays(pickupDatetime, -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">พัสดุถึงมือ</span>
+                          <span>{format(pickupDatetime, 'd MMM yyyy', { locale: th })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)</span>
+                          <span>{format(returnDatetime, 'd MMM yyyy', { locale: th })} ก่อน 12:00 น.</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">รับ</span>
+                          <span>{formatBookingDate(pickupDatetime, rentalArea ?? 'local')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">คืน</span>
+                          <span>{formatBookingDate(returnDatetime, rentalArea ?? 'local')}</span>
+                        </div>
+                      </>
+                    )}
                     {!selectionConflict && (
                       <div className="flex justify-between font-semibold text-gold border-t border-pink-100 pt-2">
                         <span>ค่าเช่า</span>
@@ -494,8 +649,8 @@ function BookPage() {
               </div>
             )}
 
-            {/* Step 2: Pickup/return method */}
-            {step === 2 && (
+            {/* Step 3: Pickup/return method (local) or shipping address (provincial) */}
+            {step === STEP_ADDRESS && !isProvincial && (
               <div>
                 <h1 className="text-2xl font-bold mb-6">รูปแบบรับ-คืน</h1>
 
@@ -582,11 +737,13 @@ function BookPage() {
               </div>
             )}
 
-            {/* Step 3: Customer info */}
-            {step === 3 && (
+            {/* Step 4: Customer info (+ shipping address for provincial) */}
+            {step === STEP_INFO && (
               <div>
-                <h1 className="text-2xl font-bold mb-6">ข้อมูลส่วนตัว</h1>
+                <h1 className="text-2xl font-bold mb-6">{isProvincial ? 'ข้อมูลผู้เช่าและที่อยู่จัดส่ง' : 'ข้อมูลส่วนตัว'}</h1>
+
                 <div className="space-y-4">
+                  {isProvincial && <p className="text-sm font-semibold text-gray-600">ข้อมูลผู้เช่า</p>}
                   <Field
                     label="ชื่อ-นามสกุล *"
                     value={customerName}
@@ -608,7 +765,88 @@ function BookPage() {
                     onChange={setCustomerIG}
                     placeholder="@username"
                   />
+                </div>
 
+                {isProvincial && (
+                  <div className="space-y-4 my-6">
+                    <p className="text-sm font-semibold text-gray-600">ที่อยู่จัดส่ง</p>
+                    <div>
+                      <label className="text-sm text-gray-500 block mb-1">ที่อยู่ (บ้านเลขที่ / หมู่ / ซอย / ถนน) *</label>
+                      <textarea
+                        value={shippingAddress}
+                        onChange={(e) => setShippingAddress(e.target.value)}
+                        placeholder="เช่น 123 หมู่ 4 ซอยสุขใจ ถ.มิตรภาพ"
+                        rows={3}
+                        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder:text-gray-300 resize-none ${
+                          errors.shippingAddress ? 'border-pink/60' : 'focus:border-pink/50'
+                        }`}
+                      />
+                      {errors.shippingAddress && <p className="text-pink text-xs mt-1">{errors.shippingAddress}</p>}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field
+                        label="ตำบล/แขวง *"
+                        value={shippingSubdistrict}
+                        onChange={setShippingSubdistrict}
+                        placeholder="ตำบล/แขวง"
+                        error={errors.shippingSubdistrict}
+                      />
+                      <Field
+                        label="อำเภอ/เขต *"
+                        value={shippingDistrict}
+                        onChange={setShippingDistrict}
+                        placeholder="อำเภอ/เขต"
+                        error={errors.shippingDistrict}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field
+                        label="จังหวัด *"
+                        value={shippingProvince}
+                        onChange={setShippingProvince}
+                        placeholder="จังหวัด"
+                        error={errors.shippingProvince}
+                      />
+                      <Field
+                        label="รหัสไปรษณีย์ *"
+                        value={shippingPostalCode}
+                        onChange={(v) => setShippingPostalCode(v.replace(/\D/g, '').slice(0, 5))}
+                        placeholder="XXXXX"
+                        type="tel"
+                        error={errors.shippingPostalCode}
+                      />
+                    </div>
+
+                    <div className="glass rounded-xl p-4 text-sm space-y-1.5">
+                      <p className="text-gray-500 font-semibold">การคืนเครื่อง</p>
+                      <p className="text-gray-400 text-xs leading-relaxed">
+                        ลูกค้านำพัสดุไปส่งคืนทางไปรษณีย์หรือขนส่งเอกชนเอง โดยรับผิดชอบค่าส่งขากลับเอง
+                        {returnDatetime && ` ก่อน 12:00 น. ของวันที่ ${format(returnDatetime, 'd MMM yyyy', { locale: th })}`}
+                      </p>
+                      <p className="text-gray-400 text-xs leading-relaxed">
+                        แล้วแจ้งเลขพัสดุในแชท
+                        {returnDatetime && ` ก่อนเที่ยงวันที่ ${format(addDays(returnDatetime, 1), 'd MMM yyyy', { locale: th })}`}
+                      </p>
+                    </div>
+
+                    <div className="glass rounded-xl p-4 text-sm space-y-1">
+                      <div className="flex justify-between text-gray-500">
+                        <span>ค่าเช่า</span><span>{price.toLocaleString()} ฿</span>
+                      </div>
+                      <div className="flex justify-between text-gray-500">
+                        <span>ค่าส่ง (ขาไป)</span><span>+{deliveryFee} ฿</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-pink border-t border-pink-100 pt-2">
+                        <span>รวม</span><span>{total.toLocaleString()} ฿</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {isProvincial && <p className="text-sm font-semibold text-gray-600">หลักฐานยืนยันตัวตน</p>}
                   <div>
                     <p className="text-sm text-gray-500 mb-2">บัตรประชาชน * <span className="text-gray-400">(สามารถปิดเลขบัตรได้)</span></p>
                     <label className={`flex flex-col items-center justify-center h-40 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
@@ -709,22 +947,45 @@ function BookPage() {
               </div>
             )}
 
-            {/* Step 4: Summary & confirm */}
-            {step === 4 && camera && pickupDatetime && returnDatetime && (
+            {/* Step 5: Summary & confirm */}
+            {step === STEP_CONFIRM && camera && rentalArea && pickupDatetime && returnDatetime && (
               <div>
                 <h1 className="text-2xl font-bold mb-6">ยืนยันการจอง</h1>
                 <div className="glass-pink rounded-2xl p-5 space-y-3 text-sm mb-6">
+                  <SummaryRow label="พื้นที่" value={isProvincial ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
                   <SummaryRow label="กล้อง" value={camera.name} />
-                  <SummaryRow label="รับ" value={format(pickupDatetime, 'd MMM yyyy HH:mm', { locale: th }) + ' น.'} />
-                  <SummaryRow label="คืน" value={format(returnDatetime, 'd MMM yyyy HH:mm', { locale: th }) + ' น.'} />
-                  <SummaryRow
-                    label="รับเครื่อง"
-                    value={pickupType === 'self' ? 'รับเองที่ร้าน (ฟรี)' : `Delivery → ${pickupAddress}`}
-                  />
-                  <SummaryRow
-                    label="คืนเครื่อง"
-                    value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : `Delivery → ${effectiveReturnAddress}`}
-                  />
+                  {isProvincial ? (
+                    <>
+                      <SummaryRow label="ร้านส่งพัสดุ" value={format(addDays(pickupDatetime, -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })} />
+                      <SummaryRow label="พัสดุถึงมือ" value={format(pickupDatetime, 'd MMM yyyy', { locale: th })} />
+                      <SummaryRow label="ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)" value={`${format(returnDatetime, 'd MMM yyyy', { locale: th })} ก่อน 12:00 น.`} />
+                      <SummaryRow
+                        label="ที่อยู่จัดส่ง"
+                        value={`${shippingAddress} ต.${shippingSubdistrict} อ./เขต ${shippingDistrict} จ.${shippingProvince} ${shippingPostalCode}`}
+                      />
+                      <SummaryRow
+                        label="แจ้งเลขพัสดุภายใน"
+                        value={`เที่ยงวันที่ ${format(addDays(returnDatetime, 1), 'd MMM yyyy', { locale: th })}`}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <SummaryRow label="รับ" value={formatBookingDate(pickupDatetime, rentalArea)} />
+                      <SummaryRow label="คืน" value={formatBookingDate(returnDatetime, rentalArea)} />
+                    </>
+                  )}
+                  {!isProvincial && (
+                    <>
+                      <SummaryRow
+                        label="รับเครื่อง"
+                        value={pickupType === 'self' ? 'รับเองที่ร้าน (ฟรี)' : `Delivery → ${pickupAddress}`}
+                      />
+                      <SummaryRow
+                        label="คืนเครื่อง"
+                        value={returnType === 'self' ? 'คืนเองที่ร้าน (ฟรี)' : `Delivery → ${effectiveReturnAddress}`}
+                      />
+                    </>
+                  )}
                   <SummaryRow label="ชื่อ" value={customerName} />
                   <SummaryRow label="โทร" value={customerPhone} />
                   <div className="border-t border-pink-100 pt-3 space-y-1">
@@ -738,7 +999,7 @@ function BookPage() {
                     )}
                     {deliveryFee > 0 && (
                       <div className="flex justify-between text-gray-500">
-                        <span>ค่าจัดส่ง</span><span>+{deliveryFee} ฿</span>
+                        <span>{isProvincial ? 'ค่าส่ง (ขาไป)' : 'ค่าจัดส่ง'}</span><span>+{deliveryFee} ฿</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg text-gold">
@@ -752,8 +1013,8 @@ function BookPage() {
               </div>
             )}
 
-            {/* Step 5: Receipt */}
-            {step === 5 && bookingId && camera && pickupDatetime && returnDatetime && (
+            {/* Step 6: Receipt */}
+            {step === STEP_RECEIPT && bookingId && camera && rentalArea && pickupDatetime && returnDatetime && (
               <div>
                 <div className="text-center mb-6">
                   <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -766,13 +1027,19 @@ function BookPage() {
                   bookingId={bookingId}
                   form={{
                     cameraId: cameraId!,
+                    rentalArea,
                     pickupDatetime,
                     returnDatetime,
                     durationHours,
-                    pickupType,
-                    pickupAddress,
-                    returnType,
-                    returnAddress: effectiveReturnAddress,
+                    pickupType: isProvincial ? 'delivery' : pickupType,
+                    pickupAddress: isProvincial ? '' : pickupAddress,
+                    returnType: isProvincial ? 'delivery' : returnType,
+                    returnAddress: isProvincial ? '' : effectiveReturnAddress,
+                    shippingAddress: isProvincial ? shippingAddress : '',
+                    shippingSubdistrict: isProvincial ? shippingSubdistrict : '',
+                    shippingDistrict: isProvincial ? shippingDistrict : '',
+                    shippingProvince: isProvincial ? shippingProvince : '',
+                    shippingPostalCode: isProvincial ? shippingPostalCode : '',
                     customerName,
                     customerPhone,
                     customerIG,
@@ -788,20 +1055,20 @@ function BookPage() {
         </AnimatePresence>
 
         {/* Navigation buttons */}
-        {step < 5 && (
+        {step < STEPS.length && (
           <div className="flex gap-3 mt-8">
             {step > 0 && (
               <Button onClick={back} variant="ghost" className="flex-1">
                 <ChevronLeft size={16} /> ย้อนกลับ
               </Button>
             )}
-            {step < 4 ? (
+            {step < STEPS.length - 1 ? (
               <Button
                 onClick={next}
                 variant="primary"
                 fullWidth={step === 0}
                 className="flex-1"
-                disabled={step === 1 && selectionConflict}
+                disabled={step === STEP_DATE && selectionConflict}
               >
                 ถัดไป <ChevronRight size={16} />
               </Button>

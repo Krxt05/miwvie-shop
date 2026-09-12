@@ -1,5 +1,5 @@
-import { BookedSlot, BookingFormData, Booking, CameraId, DeliveryType, PaymentStatus, BookingStatus } from '@/types'
-import { calcPrice, calcDeliveryFee, getCameraById } from './cameras'
+import { BookedSlot, BookingFormData, Booking, CameraId, DeliveryType, PaymentStatus, BookingStatus, RentalArea } from '@/types'
+import { calcPrice, calcDeliveryFee, getCameraById, PROVINCIAL_SHIPPING_FEE } from './cameras'
 
 // Apps Script ส่งมาเป็น snake_case → แปลงเป็น camelCase
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -8,6 +8,7 @@ function mapBooking(r: Record<string, any>): Booking {
     bookingId:      String(r.booking_id ?? ''),
     createdAt:      String(r.created_at ?? ''),
     cameraId:       (r.camera_id as CameraId),
+    rentalArea:     (r.rental_area as RentalArea) || 'local',
     pickupDatetime: r.pickup_datetime as unknown as Date,
     returnDatetime: r.return_datetime as unknown as Date,
     durationHours:  Number(r.duration_hours) || 0,
@@ -18,6 +19,11 @@ function mapBooking(r: Record<string, any>): Booking {
     pickupAddress:  String(r.pickup_address ?? ''),
     returnType:     (r.return_type as DeliveryType) || 'self',
     returnAddress:  String(r.return_address ?? ''),
+    shippingAddress:    String(r.shipping_address ?? ''),
+    shippingSubdistrict: String(r.shipping_subdistrict ?? ''),
+    shippingDistrict:   String(r.shipping_district ?? ''),
+    shippingProvince:   String(r.shipping_province ?? ''),
+    shippingPostalCode: String(r.shipping_postal_code ?? ''),
     customerName:   String(r.customer_name ?? ''),
     customerPhone:  String(r.customer_phone ?? ''),
     customerIG:     String(r.customer_ig ?? ''),
@@ -28,6 +34,7 @@ function mapBooking(r: Record<string, any>): Booking {
     adminNotes:     String(r.admin_notes ?? ''),
     discountCode:   String(r.discount_code ?? ''),
     discountAmount: Number(r.discount_amount) || 0,
+    returnedAt:     r.returned_at ? String(r.returned_at) : undefined,
   }
 }
 
@@ -84,7 +91,9 @@ export async function getAllCamerasAvailability(
 export async function createBooking(form: BookingFormData): Promise<{ bookingId: string }> {
   const camera = getCameraById(form.cameraId)!
   const price = calcPrice(camera.priceGroup, form.durationHours)
-  const deliveryFee = calcDeliveryFee(form.pickupType, form.returnType)
+  const deliveryFee = form.rentalArea === 'provincial'
+    ? PROVINCIAL_SHIPPING_FEE
+    : calcDeliveryFee(form.pickupType, form.returnType)
   const discountedPrice = price - (form.discountAmount ?? 0)
   const data = await post({
     action: 'createBooking',
