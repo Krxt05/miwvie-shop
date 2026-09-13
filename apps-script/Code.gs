@@ -344,6 +344,9 @@ function handlePost(body) {
     case 'setAdminPin':          return setAdminPin(body.pin, body.newPin)
     case 'getCorruptRows':       return getCorruptRows(body.pin)
     case 'listConfigKeys':       return listConfigKeys(body.pin)
+    case 'installPromoSchedule': return installPromoSchedule(body.pin)
+    case 'sendPromoNow':         return sendPromoNow(body.pin, body.slot)
+    case 'listTriggers':         return listTriggers(body.pin)
     case 'migrateDocumentSharing':
       return migrateDocumentSharing(body.pin, body.apply === true, body.start, body.limit)
     default: return { error: 'Unknown action: ' + body.action }
@@ -1158,6 +1161,97 @@ function setupSchedule() {
   })
   ScriptApp.newTrigger('pushTomorrow').timeBased().everyDays(1).atHour(16).inTimezone('Asia/Bangkok').create()
   return 'ok — pushTomorrow ตั้งเวลาทุกวัน ~16:00 แล้ว'
+}
+
+// Morning and evening nudges carrying the ready-made Facebook caption. Meta shut
+// the Groups API down in 2024, so nothing can post to a group on the shop's
+// behalf; what this can do is remove the writing from the job, leaving a paste.
+//
+// Both slots go to ONE recipient, not the admin multicast: the free LINE plan
+// allows 500 pushes a month and every extra recipient is charged as its own
+// message, so two slots a day to two people would eat 120 of them.
+function pushPromoMorning() { pushPromo('morning') }
+function pushPromoEvening() { pushPromo('evening') }
+
+function pushPromo(slot) {
+  const pin = getAdminPin()
+  if (!pin) { Logger.log('pushPromo: ADMIN_PIN not set'); return }
+  try {
+    const res = UrlFetchApp.fetch(
+      LINE_BOT_BASE + '/api/promo?slot=' + encodeURIComponent(slot),
+      { muteHttpExceptions: true }
+    )
+    if (res.getResponseCode() !== 200) {
+      Logger.log('pushPromo ' + slot + ': HTTP ' + res.getResponseCode())
+      return
+    }
+    const data = JSON.parse(res.getContentText())
+    const texts = data.texts || []
+    if (!texts.length) { Logger.log('pushPromo: no texts'); return }
+    linePushOne(texts)
+  } catch (e) {
+    Logger.log('pushPromo ' + slot + ' error: ' + e.message)
+  }
+}
+
+// Push to the first configured recipient only. LINE bills a multicast per
+// person, and the promo nudge only needs to reach whoever does the posting.
+function linePushOne(texts) {
+  const all = (PropertiesService.getScriptProperties().getProperty('LINE_USER_ID') || '')
+    .split(',').map(function (s) { return s.trim() }).filter(function (s) { return s })
+  if (!all.length) return { error: 'no recipients' }
+
+  const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_TOKEN')
+  if (!token) return { error: 'no LINE_CHANNEL_TOKEN' }
+
+  const messages = texts.filter(function (t) { return t }).slice(0, 5).map(function (t) {
+    return { type: 'text', text: String(t).slice(0, 4999) }
+  })
+  const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'post',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify({ to: all[0], messages: messages }),
+    muteHttpExceptions: true,
+  })
+  Logger.log('linePushOne ' + res.getResponseCode() + ': ' + res.getContentText())
+  return { ok: res.getResponseCode() === 200, code: res.getResponseCode() }
+}
+
+// Apps Script fires a time trigger somewhere inside the hour it is given, so
+// these land roughly 07:00-08:00 and 18:00-19:00 Bangkok.
+function setupPromoSchedule() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    const h = t.getHandlerFunction()
+    if (h === 'pushPromoMorning' || h === 'pushPromoEvening') ScriptApp.deleteTrigger(t)
+  })
+  ScriptApp.newTrigger('pushPromoMorning').timeBased().everyDays(1).atHour(7).inTimezone('Asia/Bangkok').create()
+  ScriptApp.newTrigger('pushPromoEvening').timeBased().everyDays(1).atHour(18).inTimezone('Asia/Bangkok').create()
+  return 'ok — ตั้ง pushPromoMorning ~07:00 และ pushPromoEvening ~18:00 แล้ว'
+}
+
+// Admin-triggered so the schedule can be (re)installed without opening the
+// Apps Script editor.
+function installPromoSchedule(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  return { success: true, message: setupPromoSchedule() }
+}
+
+function sendPromoNow(pin, slot) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  pushPromo(slot === 'evening' ? 'evening' : 'morning')
+  return { success: true }
+}
+
+function listTriggers(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  return {
+    triggers: ScriptApp.getProjectTriggers().map(function (t) {
+      return { handler: t.getHandlerFunction(), type: String(t.getEventType()) }
+    }),
+  }
 }
 
 function updateBookingStatus(bookingId, status, pin) {

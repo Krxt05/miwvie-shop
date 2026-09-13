@@ -31,6 +31,9 @@ const POST_ACTIONS = new Set([
   'generateDiscountCode',
   'getCorruptRows',
   'listConfigKeys',
+  'installPromoSchedule',
+  'sendPromoNow',
+  'listTriggers',
   'migrateDocumentSharing',
   'setAdminPin',
 ])
