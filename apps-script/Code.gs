@@ -109,6 +109,72 @@ function setAdminPin(pin, newPin) {
   return { success: true }
 }
 
+// Names of the Script Properties that are set, for checking configuration
+// without ever handing back a value.
+function listConfigKeys(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  return { keys: PropertiesService.getScriptProperties().getKeys().sort() }
+}
+
+// Documents uploaded before the private-by-default change are still shared
+// ANYONE_WITH_LINK, so the Drive URL on an old booking row opens a photograph of
+// someone's ID card for anybody holding it. Walks the rows, reports what it
+// finds, and — only when `apply` is true — locks each one down.
+//
+// Runs in slices because Apps Script stops an execution at six minutes and Drive
+// calls are slow: pass the returned `nextStart` back to continue.
+function migrateDocumentSharing(pin, apply, start, limit) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet || sheet.getLastRow() < 2) return { checked: 0, files: [], done: true }
+
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  const iId = header.indexOf('booking_id')
+  const cols = [header.indexOf('id_card_url'), header.indexOf('ig_profile_url')]
+
+  const first = Math.max(2, Number(start) || 2)
+  const batch = Math.max(1, Math.min(Number(limit) || 40, 200))
+  const lastRow = sheet.getLastRow()
+  if (first > lastRow) return { checked: 0, files: [], done: true }
+
+  const rows = sheet.getRange(first, 1, Math.min(batch, lastRow - first + 1), header.length).getValues()
+
+  const out = { checked: 0, public: 0, changed: 0, alreadyPrivate: 0, missing: 0, files: [] }
+  for (var r = 0; r < rows.length; r++) {
+    for (var c = 0; c < cols.length; c++) {
+      if (cols[c] < 0) continue
+      const url = String(rows[r][cols[c]] || '')
+      const m = url.match(/\/d\/([A-Za-z0-9_-]+)/)
+      if (!m) continue
+      out.checked++
+      try {
+        const file = DriveApp.getFileById(m[1])
+        const access = file.getSharingAccess()
+        const isPublic = access === DriveApp.Access.ANYONE ||
+                         access === DriveApp.Access.ANYONE_WITH_LINK
+        if (!isPublic) { out.alreadyPrivate++; continue }
+        out.public++
+        if (apply) {
+          file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW)
+          out.changed++
+        }
+        out.files.push({ booking: String(rows[r][iId]), fileId: m[1] })
+      } catch (e) {
+        out.missing++
+      }
+    }
+  }
+
+  const nextStart = first + rows.length
+  out.done = nextStart > lastRow
+  out.nextStart = nextStart
+  out.scannedRows = first + '-' + (nextStart - 1)
+  return out
+}
+
 // Unguessable per-booking secret. The booking ID is sequential and public, so it
 // is the token — never the ID — that authorises seeing a customer's own details.
 function generateAccessToken() {
@@ -277,6 +343,9 @@ function handlePost(body) {
     case 'bootstrapAdminPin':    return bootstrapAdminPin(body.newPin)
     case 'setAdminPin':          return setAdminPin(body.pin, body.newPin)
     case 'getCorruptRows':       return getCorruptRows(body.pin)
+    case 'listConfigKeys':       return listConfigKeys(body.pin)
+    case 'migrateDocumentSharing':
+      return migrateDocumentSharing(body.pin, body.apply === true, body.start, body.limit)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }

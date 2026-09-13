@@ -30,6 +30,8 @@ const POST_ACTIONS = new Set([
   'deleteBlockedSlot',
   'generateDiscountCode',
   'getCorruptRows',
+  'listConfigKeys',
+  'migrateDocumentSharing',
   'setAdminPin',
 ])
 
