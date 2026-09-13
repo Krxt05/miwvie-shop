@@ -118,7 +118,7 @@ export function buildPromo(ctx: PromoContext): Promo {
   const fullDay1 = Math.min(ORIGINAL_PRICE_TABLES.A.day1, ORIGINAL_PRICE_TABLES.B.day1)
 
   const i = rotationIndex(now, ctx.slot, HEADLINES.length)
-  const headline = HEADLINES[i]({ cheapest: cheapestDay, window: label + ' ' })
+  const headline = HEADLINES[i]({ cheapest: cheapestDay, window: label })
 
   const lines: string[] = [headline, '']
 
