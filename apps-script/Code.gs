@@ -14,6 +14,7 @@ const BOOKING_HEADERS = [
   'discount_code', 'discount_amount',
   'rental_area', 'shipping_address', 'shipping_subdistrict', 'shipping_district', 'shipping_province', 'shipping_postal_code',
   'returned_at',
+  'access_token', 'request_key',
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for
@@ -46,8 +47,160 @@ const CAMERA_QUANTITY = {
   IXY200: 1
 }
 
+// The browser computes prices too (src/lib/cameras.ts) so it can show a total
+// before submitting, but it is never the source of truth: the server recomputes
+// every figure it stores. Keep these tables in lock-step with cameras.ts.
+const PRICE_TABLES = {
+  A: { hourly6: 110, day1: 190, day2: 340, day3: 490, day4: 560, day5: 640, day6: 700, day7: 750 },
+  B: { hourly6: 100, day1: 150, day2: 260, day3: 370, day4: 440, day5: 520, day6: 600, day7: 670 },
+}
+const EXTRA_DAY_RATE = { A: 100, B: 90 }
+const CAMERA_GROUP = {
+  IXY10s: 'A', IXY30s: 'A', IXY930IS: 'A', IXY510IS: 'A', IXY910IS: 'B', IXY200: 'B',
+}
+const PROVINCIAL_SHIPPING_FEE = 50
+const LOCAL_DELIVERY_FEE = 20
+const REVIEW_DISCOUNT_RATE = 0.1
+
+// Input ceilings. A booking longer than two months or an image bigger than this
+// is a malformed or hostile request, not a customer.
+const MAX_DURATION_HOURS = 24 * 62
+const MAX_IMAGE_CHARS = 4 * 1024 * 1024
+const MAX_TEXT_LEN = 500
+
+function calcPriceServer(group, durationHours) {
+  const t = PRICE_TABLES[group] || PRICE_TABLES.A
+  if (durationHours <= 6) return t.hourly6
+  const days = Math.ceil(durationHours / 24)
+  if (days <= 7) return t['day' + days]
+  return t.day7 + (days - 7) * (EXTRA_DAY_RATE[group] || EXTRA_DAY_RATE.A)
+}
+
 function getAdminPin() {
-  return PropertiesService.getScriptProperties().getProperty('ADMIN_PIN') || '1234'
+  // Deliberately no fallback. An unset property must lock admin actions out
+  // rather than hand every visitor a default PIN — the public /api/sheets proxy
+  // forwards any action, so this string is the only gate in front of them.
+  return PropertiesService.getScriptProperties().getProperty('ADMIN_PIN') || null
+}
+
+// Returns an error object to hand straight back, or null when the PIN is good.
+function checkPin(pin) {
+  const real = getAdminPin()
+  if (!real) return { error: 'ระบบยังไม่ได้ตั้งรหัสแอดมิน' }
+  if (String(pin || '') !== String(real)) return { error: 'Invalid PIN' }
+  return null
+}
+
+// One-shot bootstrap so the very first PIN can be set on a script that has none.
+// Closes itself permanently the moment a PIN exists.
+function bootstrapAdminPin(newPin) {
+  const props = PropertiesService.getScriptProperties()
+  if (props.getProperty('ADMIN_PIN')) return { error: 'ตั้งรหัสไว้แล้ว ใช้ setAdminPin แทน' }
+  if (!newPin || String(newPin).length < 4) return { error: 'รหัสต้องยาวอย่างน้อย 4 ตัว' }
+  props.setProperty('ADMIN_PIN', String(newPin))
+  return { success: true }
+}
+
+function setAdminPin(pin, newPin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  if (!newPin || String(newPin).length < 4) return { error: 'รหัสต้องยาวอย่างน้อย 4 ตัว' }
+  PropertiesService.getScriptProperties().setProperty('ADMIN_PIN', String(newPin))
+  return { success: true }
+}
+
+// Unguessable per-booking secret. The booking ID is sequential and public, so it
+// is the token — never the ID — that authorises seeing a customer's own details.
+function generateAccessToken() {
+  return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 40)
+}
+
+// Everything the customer's own receipt page needs, and nothing more. Contact
+// details, document links, admin notes and coupon codes are admin-only and are
+// absent from both customer lists on purpose.
+const CUSTOMER_BOOKING_FIELDS = [
+  'booking_id', 'created_at', 'camera_id', 'camera_name',
+  'pickup_datetime', 'return_datetime', 'duration_hours',
+  'price', 'delivery_fee', 'total_amount', 'discount_amount',
+  'pickup_type', 'pickup_address', 'return_type', 'return_address',
+  'rental_area', 'shipping_address', 'shipping_subdistrict',
+  'shipping_district', 'shipping_province', 'shipping_postal_code',
+  'payment_status', 'booking_status', 'returned_at',
+]
+
+// What an old link with no token, or a wrong token, may still see: enough to
+// check "is my booking confirmed yet", with no personal data attached.
+const PUBLIC_BOOKING_FIELDS = [
+  'booking_id', 'camera_id', 'camera_name', 'pickup_datetime', 'return_datetime',
+  'duration_hours', 'total_amount', 'rental_area',
+  'payment_status', 'booking_status', 'returned_at',
+]
+
+// Rejects a booking request before it can take a lock, upload anything, or write
+// a row. The date checks matter beyond this request: a row whose dates don't
+// parse makes readBookingSlotsAll throw on toISOString(), which takes down the
+// calendar, createBooking and the LINE queue commands for everyone at once.
+function validateBookingInput(data) {
+  const errors = []
+
+  if (!CAMERA_NAMES[data.cameraId]) errors.push('ไม่รู้จักกล้องรุ่นนี้')
+
+  const area = data.rentalArea || 'local'
+  if (area !== 'local' && area !== 'provincial') errors.push('พื้นที่เช่าไม่ถูกต้อง')
+
+  const pickup = new Date(data.pickupDatetime)
+  const ret = new Date(data.returnDatetime)
+  if (isNaN(pickup.getTime())) errors.push('วันรับไม่ถูกต้อง')
+  if (isNaN(ret.getTime())) errors.push('วันคืนไม่ถูกต้อง')
+  if (!isNaN(pickup.getTime()) && !isNaN(ret.getTime())) {
+    if (ret.getTime() <= pickup.getTime()) errors.push('วันคืนต้องอยู่หลังวันรับ')
+    if ((ret.getTime() - pickup.getTime()) / 3600000 > MAX_DURATION_HOURS) {
+      errors.push('ระยะเวลาเช่ายาวเกินที่ระบบรองรับ')
+    }
+  }
+
+  const name = String(data.customerName == null ? '' : data.customerName).trim()
+  if (name.length < 2 || name.length > 120) errors.push('กรุณากรอกชื่อ-นามสกุลให้ถูกต้อง')
+
+  const phone = String(data.customerPhone == null ? '' : data.customerPhone).replace(/[^0-9]/g, '')
+  if (phone.length < 9 || phone.length > 10) errors.push('เบอร์โทรไม่ถูกต้อง')
+
+  if (area === 'provincial') {
+    const required = [
+      ['shippingAddress', 'ที่อยู่จัดส่ง'], ['shippingSubdistrict', 'ตำบล/แขวง'],
+      ['shippingDistrict', 'อำเภอ/เขต'], ['shippingProvince', 'จังหวัด'],
+    ]
+    for (var i = 0; i < required.length; i++) {
+      if (!String(data[required[i][0]] || '').trim()) errors.push('กรุณากรอก' + required[i][1])
+    }
+    if (String(data.shippingPostalCode || '').replace(/[^0-9]/g, '').length !== 5) {
+      errors.push('รหัสไปรษณีย์ไม่ถูกต้อง')
+    }
+  }
+
+  const textFields = ['pickupAddress', 'returnAddress', 'shippingAddress', 'customerIG',
+                      'shippingSubdistrict', 'shippingDistrict', 'shippingProvince']
+  for (var j = 0; j < textFields.length; j++) {
+    if (String(data[textFields[j]] || '').length > MAX_TEXT_LEN) errors.push('ข้อมูลบางช่องยาวเกินกำหนด')
+  }
+
+  for (var k = 0, imgs = ['idCardImage', 'igProfileImage']; k < imgs.length; k++) {
+    const img = data[imgs[k]]
+    if (img && String(img).length > MAX_IMAGE_CHARS) errors.push('ไฟล์รูปใหญ่เกินไป')
+  }
+
+  return errors
+}
+
+// Server-authoritative money. Never reads price/deliveryFee/totalAmount off the
+// request — a client that sends its own total can otherwise store any number.
+function quoteBooking(data, durationHours) {
+  const price = calcPriceServer(CAMERA_GROUP[data.cameraId], durationHours)
+  const deliveryFee = data.rentalArea === 'provincial'
+    ? PROVINCIAL_SHIPPING_FEE
+    : ((data.pickupType === 'delivery' ? LOCAL_DELIVERY_FEE : 0) +
+       (data.returnType === 'delivery' ? LOCAL_DELIVERY_FEE : 0))
+  return { price: price, deliveryFee: deliveryFee }
 }
 
 // ── Spreadsheet helper ───────────────────────────────────────
@@ -96,7 +249,7 @@ function handleGet(p) {
     case 'setup':              return setupSheets()
     case 'getAvailability':    return getAvailability(p.camera, p.month)
     case 'getAllAvailability':  return getAllAvailability(p.month)
-    case 'getBooking':         return getBookingById(p.id)
+    case 'getBooking':         return getBookingById(p.id, p.token)
     case 'validateDiscountCode': return validateDiscountCode(p.code)
     case 'getUpcomingQueue':    return getUpcomingQueue(p.pin)
     default: return { error: 'Unknown action: ' + p.action }
@@ -108,6 +261,8 @@ function handleGet(p) {
 function handlePost(body) {
   switch (body.action) {
     case 'createBooking':        return createBooking(body)
+    case 'getBooking':           return getBookingById(body.id, body.token)
+    case 'attachImages':         return attachImages(body.bookingId, body.idCardImage, body.igProfileImage, body.token)
     case 'getAdminBookings':     return getAdminBookings(body.pin)
     case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
     case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
@@ -119,6 +274,9 @@ function handlePost(body) {
     case 'getUpcomingQueue':     return getUpcomingQueue(body.pin)
     case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text, body.texts)
     case 'linePush':             return linePush(body.pin, body.text, body.texts)
+    case 'bootstrapAdminPin':    return bootstrapAdminPin(body.newPin)
+    case 'setAdminPin':          return setAdminPin(body.pin, body.newPin)
+    case 'getCorruptRows':       return getCorruptRows(body.pin)
     default: return { error: 'Unknown action: ' + body.action }
   }
 }
@@ -233,6 +391,12 @@ function readBookingSlotsAll(month) {
       ret = new Date(new Date(row[iReturn]).getTime() + buffer)
     }
 
+    // A row whose dates don't parse would throw on toISOString() below and take
+    // out the calendar, createBooking and the LINE queue commands all at once.
+    // Validation now stops such rows at the door, but older rows may already be
+    // on the sheet: skip them and let getCorruptRows() report them to the admin.
+    if (isNaN(pickup.getTime()) || isNaN(ret.getTime())) continue
+
     if (monthStart && (ret <= monthStart || pickup >= monthEnd)) continue
 
     result.push({
@@ -316,9 +480,20 @@ function createBooking(data) {
   const sheet = ss.getSheetByName('bookings')
   if (!sheet) return { error: 'Run setup first via ?action=setup' }
 
-  const isProvincial = data.rentalArea === 'provincial'
+  // Shape and sanity first: nothing below this point should ever see a value
+  // that could not have come from the real booking form.
+  const problems = validateBookingInput(data)
+  if (problems.length) return { error: problems[0], errors: problems }
 
-  if (isProvincial && Number(data.durationHours) < MIN_PROVINCIAL_DURATION_HOURS) {
+  const isProvincial = data.rentalArea === 'provincial'
+  const pickupDate = new Date(data.pickupDatetime)
+  const returnDate = new Date(data.returnDatetime)
+
+  // Derived, not trusted. The form always sends a duration matching the window
+  // it picked, but pricing keys off this number so it must come from the dates.
+  const durationHours = Math.round((returnDate.getTime() - pickupDate.getTime()) / 3600000)
+
+  if (isProvincial && durationHours < MIN_PROVINCIAL_DURATION_HOURS) {
     return { error: 'เช่าต่างจังหวัดขั้นต่ำ 3 วัน' }
   }
   if (isProvincial) {
@@ -328,33 +503,28 @@ function createBooking(data) {
     // midnight. Keep this in lock-step with DayRangePicker's earliestStart.
     const earliest = startOfTodayBangkok().getTime()
       + PROVINCIAL_SHIP_LEAD_DAYS * 24 * 60 * 60 * 1000
-    if (new Date(data.pickupDatetime).getTime() < earliest) {
+    if (pickupDate.getTime() < earliest) {
       return { error: 'เช่าต่างจังหวัดต้องจองล่วงหน้าอย่างน้อย 3 วัน เผื่อเวลาส่งพัสดุ' }
     }
   }
 
   ensureColumns(sheet, BOOKING_HEADERS)
 
-  // Validate discount code (a read — safe outside the lock)
-  let discountAmount = 0
-  if (data.discountCode) {
-    const validation = validateDiscountCode(data.discountCode)
-    if (!validation.valid) {
-      return { error: 'โค้ดส่วนลดไม่ถูกต้อง: ' + validation.error }
-    }
-    discountAmount = data.discountAmount || 0
-  }
+  const quote = quoteBooking(data, durationHours)
+  const requestKey = String(data.requestKey || '').slice(0, 64)
 
-  // Upload the ID/profile shots BEFORE taking the lock. Two Drive round-trips
-  // take seconds; holding the global lock across them would stall every other
-  // booking (and every admin block) for that whole time. The filename is only
-  // cosmetic, so a provisional one is fine — the booking row links by URL.
+  // The two Drive uploads used to run here, inside the booking request, and cost
+  // ~8s of the ~12s the customer spent staring at a spinner — long enough that a
+  // mobile connection would often drop before the response came back, showing
+  // "Network error" for a booking that had in fact been written. The client now
+  // books first and sends the images afterwards via `attachImages`, so this only
+  // still runs for an older client that posts the images inline.
   const uploadKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd-HHmmss') +
     '-' + String(data.customerPhone || '').slice(-4)
   const idCardUrl = data.idCardImage ? uploadImage(data.idCardImage, uploadKey + '_id') : ''
   const igUrl = data.igProfileImage ? uploadImage(data.igProfileImage, uploadKey + '_ig') : ''
 
-  // Everything from the capacity check through the row write must be atomic:
+  // Everything from the duplicate check through the row write must be atomic:
   // two people submitting for the last unit at the same instant would otherwise
   // both read "1 free" and both get written. Serialise with a script lock.
   const lock = LockService.getScriptLock()
@@ -365,7 +535,37 @@ function createBooking(data) {
   }
 
   let bookingId
+  let accessToken
+  let discountAmount = 0
   try {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+
+    // Idempotency. A reply that never reached the browser used to leave the
+    // customer with an error and a booking they could not see, so they booked
+    // again — and on a single-unit camera the retry was then refused as "full"
+    // by their own first booking. Replaying the same key returns the original.
+    if (requestKey) {
+      const existing = findBookingByRequestKey(sheet, header, requestKey)
+      if (existing) {
+        return {
+          success: true,
+          bookingId: existing.bookingId,
+          accessToken: existing.accessToken,
+          replayed: true,
+        }
+      }
+    }
+
+    // Validate the coupon inside the lock and consume it in the same critical
+    // section as the write, so two people cannot both spend a single-use code.
+    if (data.discountCode) {
+      const validation = validateDiscountCode(data.discountCode)
+      if (!validation.valid) {
+        return { error: 'โค้ดส่วนลดไม่ถูกต้อง: ' + validation.error }
+      }
+      discountAmount = Math.floor(quote.price * REVIEW_DISCOUNT_RATE)
+    }
+
     // Validate capacity: count concurrent overlapping bookings/blocks
     // (including admin blocks) against how many physical units this model has.
     // A provincial candidate also needs its own window padded — it independently
@@ -373,14 +573,14 @@ function createBooking(data) {
     // on top of whatever buffer the neighboring booking already carries.
     // Always reads the live sheet (no cache) so the check can't miss a booking
     // that landed a moment earlier.
-    const existing = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
+    const existingSlots = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
     const candidateBuffer = isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : 0
-    const newPickup = new Date(new Date(data.pickupDatetime).getTime() - candidateBuffer)
-    const newReturn = new Date(new Date(data.returnDatetime).getTime() + candidateBuffer)
+    const newPickup = new Date(pickupDate.getTime() - candidateBuffer)
+    const newReturn = new Date(returnDate.getTime() + candidateBuffer)
     const quantity = CAMERA_QUANTITY[data.cameraId] || 1
 
     const events = []
-    for (const slot of existing) {
+    for (const slot of existingSlots) {
       const slotPickup = new Date(slot.pickupDatetime)
       const slotReturn = new Date(slot.returnDatetime)
       if (slotPickup < newReturn && slotReturn > newPickup) {
@@ -400,7 +600,12 @@ function createBooking(data) {
     }
 
     bookingId = generateBookingId()
+    accessToken = generateAccessToken()
     const now = new Date().toISOString()
+
+    // Money is recomputed here, never copied from the request: a client that
+    // posts its own price/total could otherwise store any number it liked.
+    const totalAmount = quote.price - discountAmount + quote.deliveryFee
 
     // Write by header NAME, not by position — the live sheet has a stray unnamed
     // column, so a positional appendRow lands every field after it in the wrong
@@ -410,19 +615,19 @@ function createBooking(data) {
       created_at: now,
       camera_id: data.cameraId,
       camera_name: CAMERA_NAMES[data.cameraId] || data.cameraId,
-      pickup_datetime: data.pickupDatetime,
-      return_datetime: data.returnDatetime,
-      duration_hours: data.durationHours,
-      price: data.price,
-      delivery_fee: data.deliveryFee,
-      total_amount: data.totalAmount,
-      pickup_type: data.pickupType,
-      pickup_address: data.pickupAddress || '',
-      return_type: data.returnType,
-      return_address: data.returnAddress || '',
-      customer_name: data.customerName,
-      customer_phone: data.customerPhone,
-      customer_ig: data.customerIG || '',
+      pickup_datetime: pickupDate.toISOString(),
+      return_datetime: returnDate.toISOString(),
+      duration_hours: durationHours,
+      price: quote.price,
+      delivery_fee: quote.deliveryFee,
+      total_amount: totalAmount,
+      pickup_type: data.pickupType === 'delivery' ? 'delivery' : 'self',
+      pickup_address: String(data.pickupAddress || '').trim(),
+      return_type: data.returnType === 'delivery' ? 'delivery' : 'self',
+      return_address: String(data.returnAddress || '').trim(),
+      customer_name: String(data.customerName || '').trim(),
+      customer_phone: String(data.customerPhone || '').trim(),
+      customer_ig: String(data.customerIG || '').trim(),
       id_card_url: idCardUrl,
       ig_profile_url: igUrl,
       payment_status: 'pending',
@@ -430,20 +635,28 @@ function createBooking(data) {
       admin_notes: '',
       discount_code: data.discountCode || '',
       discount_amount: discountAmount,
-      rental_area: data.rentalArea || 'local',
-      shipping_address: data.shippingAddress || '',
-      shipping_subdistrict: data.shippingSubdistrict || '',
-      shipping_district: data.shippingDistrict || '',
-      shipping_province: data.shippingProvince || '',
-      shipping_postal_code: data.shippingPostalCode || '',
+      rental_area: isProvincial ? 'provincial' : 'local',
+      shipping_address: String(data.shippingAddress || '').trim(),
+      shipping_subdistrict: String(data.shippingSubdistrict || '').trim(),
+      shipping_district: String(data.shippingDistrict || '').trim(),
+      shipping_province: String(data.shippingProvince || '').trim(),
+      shipping_postal_code: String(data.shippingPostalCode || '').trim(),
       returned_at: '',
+      access_token: accessToken,
+      request_key: requestKey,
     }
-    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     const rowArr = header.map(function (name) {
       return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''
     })
     const newRow = sheet.getLastRow() + 1
     sheet.getRange(newRow, 1, 1, rowArr.length).setValues([rowArr])
+
+    // Spend the coupon before the lock frees, so the booking and the code being
+    // marked used cannot disagree if this execution dies a moment from now.
+    if (data.discountCode && discountAmount > 0) {
+      applyDiscountCode(data.discountCode, bookingId)
+    }
+
     SpreadsheetApp.flush() // make sure the row is committed before the lock frees
 
     // Highlight pending row (booking_status column)
@@ -453,20 +666,109 @@ function createBooking(data) {
     lock.releaseLock()
   }
 
-  // Mark discount code as used (own lock inside applyDiscountCode if needed)
-  if (data.discountCode && discountAmount > 0) {
-    applyDiscountCode(data.discountCode, bookingId)
-  }
-
   // LINE notification — outside the lock, network call shouldn't block others
   sendLineNotify(bookingId, data, discountAmount)
 
-  return { success: true, bookingId }
+  return { success: true, bookingId: bookingId, accessToken: accessToken }
+}
+
+// Looks up a previous booking written under the same idempotency key.
+function findBookingByRequestKey(sheet, header, requestKey) {
+  const iKey = header.indexOf('request_key')
+  const iId = header.indexOf('booking_id')
+  const iToken = header.indexOf('access_token')
+  if (iKey < 0 || sheet.getLastRow() < 2) return null
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues()
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][iKey]) === String(requestKey)) {
+      return {
+        bookingId: String(rows[i][iId]),
+        accessToken: iToken >= 0 ? String(rows[i][iToken] || '') : '',
+      }
+    }
+  }
+  return null
 }
 
 // Monotonic per-day sequence held in Script Properties, so an ID is never reused
 // even if rows are later deleted (getLastRow-based numbering collided in prod).
 // Callers hold the script lock, so the read-increment-write here is safe.
+// Second leg of a booking: the ID card and IG profile shots, uploaded after the
+// row already exists so the customer never waits on Drive. Called by the client
+// straight after createBooking returns, and retried by it on failure.
+//
+// No PIN — the customer has to be able to call this. Two rules keep that safe:
+// an empty cell is the only thing this will ever fill (a retry that arrives
+// after a successful upload is a no-op, and nobody can swap out an existing
+// document), and only a row created in the last half hour is eligible, so a
+// leaked booking ID is not a way to attach anything later on.
+function attachImages(bookingId, idCardImage, igProfileImage, token) {
+  if (!bookingId) return { error: 'Missing bookingId' }
+
+  for (var n = 0, imgs = [idCardImage, igProfileImage]; n < imgs.length; n++) {
+    if (imgs[n] && String(imgs[n]).length > MAX_IMAGE_CHARS) return { error: 'ไฟล์รูปใหญ่เกินไป' }
+    if (imgs[n] && !/^data:image\/(jpeg|jpg|png|webp);base64,/.test(String(imgs[n]))) {
+      return { error: 'ไฟล์ต้องเป็นรูปภาพเท่านั้น' }
+    }
+  }
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet) return { error: 'Sheet not found' }
+
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  const idCol = header.indexOf('id_card_url') + 1
+  const igCol = header.indexOf('ig_profile_url') + 1
+  const createdCol = header.indexOf('created_at') + 1
+  const phoneCol = header.indexOf('customer_phone') + 1
+  const tokenCol = header.indexOf('access_token') + 1
+  if (!idCol || !igCol) return { error: 'Columns missing' }
+
+  const ids = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 1).getValues()
+  let row = 0
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(bookingId)) { row = i + 2; break }
+  }
+  if (!row) return { error: 'Booking not found' }
+
+  // The booking ID alone must not be enough to staple documents onto someone
+  // else's rental — the token handed back by createBooking proves the caller is
+  // the same person who just made this booking.
+  if (tokenCol) {
+    const stored = String(sheet.getRange(row, tokenCol).getValue() || '')
+    if (!stored || !token || String(token) !== stored) return { error: 'ไม่มีสิทธิ์แนบรูปกับการจองนี้' }
+  }
+
+  const createdAt = createdCol ? new Date(sheet.getRange(row, createdCol).getValue()) : null
+  if (createdAt && !isNaN(createdAt.getTime())) {
+    if (Date.now() - createdAt.getTime() > 30 * 60 * 1000) {
+      return { error: 'หมดเวลาแนบรูปแล้ว กรุณาส่งรูปให้ร้านทาง IG' }
+    }
+  }
+
+  const uploadKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd-HHmmss') +
+    '-' + String(phoneCol ? sheet.getRange(row, phoneCol).getValue() : '').slice(-4)
+
+  const result = { success: true }
+  const legs = [
+    { image: idCardImage,     col: idCol, suffix: '_id', key: 'idCardUrl' },
+    { image: igProfileImage,  col: igCol, suffix: '_ig', key: 'igProfileUrl' },
+  ]
+  for (const leg of legs) {
+    const cell = sheet.getRange(row, leg.col)
+    const existing = String(cell.getValue() || '')
+    if (existing) { result[leg.key] = existing; continue }   // already uploaded — retry is a no-op
+    if (!leg.image) continue
+    const url = uploadImage(leg.image, uploadKey + leg.suffix)
+    if (!url) { result[leg.key] = ''; result.partial = true; continue }
+    cell.setValue(url)
+    result[leg.key] = url
+  }
+  SpreadsheetApp.flush()
+
+  return result
+}
+
 function generateBookingId() {
   const date = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd')
   const props = PropertiesService.getScriptProperties()
@@ -501,26 +803,67 @@ function highestSeqForDate(prefix) {
 
 // ── Get booking ──────────────────────────────────────────────
 
-function getBookingById(id) {
+// Booking IDs are sequential and handed out in availability responses, so this
+// endpoint used to be a way to walk the whole customer list — phone numbers,
+// addresses and the Drive links to their ID cards included. The ID alone now
+// buys only the status view; the per-booking token unlocks the customer's own
+// details, and contact info and document URLs are admin-only either way.
+function getBookingById(id, token) {
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet || sheet.getLastRow() < 2) return { booking: null }
 
   const data = sheet.getDataRange().getValues()
   const headers = data[0]
+  const iToken = headers.indexOf('access_token')
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) !== String(id)) continue
+
+    const stored = iToken >= 0 ? String(data[i][iToken] || '') : ''
+    const authorized = Boolean(stored) && Boolean(token) && String(token) === stored
+    const allowed = authorized ? CUSTOMER_BOOKING_FIELDS : PUBLIC_BOOKING_FIELDS
+
     const booking = {}
-    headers.forEach((h, j) => { booking[h] = data[i][j] })
-    return { booking }
+    headers.forEach(function (h, j) {
+      if (allowed.indexOf(h) >= 0) booking[h] = data[i][j]
+    })
+    return { booking: booking, limited: !authorized }
   }
   return { booking: null }
+}
+
+// Rows the sheet already holds that would break availability reads. Admin-only:
+// it exists so a bad row can be found and repaired rather than silently skipped.
+function getCorruptRows(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet || sheet.getLastRow() < 2) return { rows: [] }
+
+  const data = sheet.getDataRange().getValues()
+  const h = data[0]
+  const iId = h.indexOf('booking_id')
+  const iPickup = h.indexOf('pickup_datetime')
+  const iReturn = h.indexOf('return_datetime')
+  const bad = []
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][iId]) continue
+    const p = new Date(data[i][iPickup])
+    const r = new Date(data[i][iReturn])
+    if (isNaN(p.getTime()) || isNaN(r.getTime())) {
+      bad.push({ row: i + 1, bookingId: String(data[i][iId]),
+                 pickup: String(data[i][iPickup]), return: String(data[i][iReturn]) })
+    }
+  }
+  return { rows: bad }
 }
 
 // ── Admin ────────────────────────────────────────────────────
 
 function getAdminBookings(pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet || sheet.getLastRow() < 2) return { bookings: [] }
@@ -592,7 +935,8 @@ function buildQueueItem(row, col) {
 // คิวของวันหนึ่ง (สำหรับ LINE bot คำสั่ง "วันนี้"/"พรุ่งนี้"/"5/9/26")
 // date = 'yyyy-MM-dd' (โซนเวลา Asia/Bangkok)
 function getDayQueue(pin, date) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet || sheet.getLastRow() < 2) return { date: date, pickups: [], returns: [], active: [] }
@@ -627,7 +971,8 @@ function getDayQueue(pin, date) {
 
 // คิวทั้งหมดตั้งแต่วันนี้เป็นต้นไป — จัดกลุ่มตามวัน (สำหรับคำสั่ง "คิวทั้งหมด")
 function getUpcomingQueue(pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd')
   const sheet = getSpreadsheet().getSheetByName('bookings')
@@ -704,13 +1049,15 @@ function lineSend(kind, replyToken, msgs) {
 }
 
 function lineReply(pin, replyToken, text, texts) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
   if (!replyToken) return { error: 'missing replyToken' }
   return lineSend('reply', replyToken, texts && texts.length ? texts : [text])
 }
 
 function linePush(pin, text, texts) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
   return lineSend('push', null, texts && texts.length ? texts : [text])
 }
 
@@ -721,6 +1068,7 @@ var LINE_BOT_BASE = 'https://miwvie-shop.vercel.app'
 
 function pushTomorrow() {
   const pin = getAdminPin()
+  if (!pin) { Logger.log('pushTomorrow: ADMIN_PIN not set'); return }
   try {
     const res = UrlFetchApp.fetch(
       LINE_BOT_BASE + '/api/line-webhook?q=' + encodeURIComponent('พรุ่งนี้') + '&pin=' + encodeURIComponent(pin),
@@ -744,7 +1092,8 @@ function setupSchedule() {
 }
 
 function updateBookingStatus(bookingId, status, pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
@@ -779,14 +1128,23 @@ function updateBookingStatus(bookingId, status, pin) {
       // the timestamp so the queue doesn't stay free while the unit is still out.
       sheet.getRange(i + 1, iReturnedAt + 1).setValue('')
     }
-    return { success: true }
+    SpreadsheetApp.flush()
+
+    // Return the row as saved. The admin UI used to patch only the status in its
+    // local state, so returned_at stayed stale and the heatmap kept a returned
+    // provincial unit blocked for its full 3-day tail until a manual refresh.
+    const saved = sheet.getRange(i + 1, 1, 1, h.length).getValues()[0]
+    const booking = {}
+    h.forEach(function (name, j) { if (name) booking[name] = saved[j] })
+    return { success: true, booking: booking }
   }
 
   return { error: 'Booking not found' }
 }
 
 function deleteBooking(bookingId, pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
@@ -803,7 +1161,8 @@ function deleteBooking(bookingId, pin) {
 }
 
 function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
@@ -847,7 +1206,8 @@ function ensureColumns(sheet, headers) {
 }
 
 function listBlockedSlots(pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet || sheet.getLastRow() < 2) return { slots: [] }
@@ -867,7 +1227,8 @@ function listBlockedSlots(pin) {
 }
 
 function deleteBlockedSlot(id, pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
@@ -886,7 +1247,8 @@ function deleteBlockedSlot(id, pin) {
 // ── Discount codes ───────────────────────────────────────────
 
 function generateDiscountCode(bookingId, pin) {
-  if (pin !== getAdminPin()) return { error: 'Invalid PIN' }
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
 
   const ss = getSpreadsheet()
   let sheet = ss.getSheetByName('discount_codes')
@@ -1055,7 +1417,10 @@ function uploadImage(base64Data, filename) {
     const folderId = PropertiesService.getScriptProperties().getProperty('DRIVE_FOLDER_ID')
     const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder()
     const file = folder.createFile(blob)
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+    // Private, not ANYONE_WITH_LINK: these are photographs of national ID cards.
+    // The shop account owns the folder, so the admin still opens them while
+    // signed in to that Google account; nobody holding the bare URL can.
+    file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW)
 
     return 'https://drive.google.com/file/d/' + file.getId() + '/view'
   } catch (e) {

@@ -10,7 +10,7 @@ import {
   CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE,
   PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
 } from '@/lib/cameras'
-import { getAvailability, createBooking, validateDiscountCode } from '@/lib/api'
+import { getAvailability, createBooking, attachImages, validateDiscountCode } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
@@ -78,6 +78,10 @@ function BookPage() {
   const [discountStatus, setDiscountStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [discountError, setDiscountError] = useState('')
   const [bookingId, setBookingId] = useState('')
+  const [accessToken, setAccessToken] = useState('')
+  const [imageUploadFailed, setImageUploadFailed] = useState(false)
+  const [slotsLoading, setSlotsLoading] = useState(0)
+  const [slotsError, setSlotsError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
@@ -113,25 +117,58 @@ function BookPage() {
 
   const fetchedMonthsRef = useRef<Set<string>>(new Set())
 
+  // An empty calendar means one of two very different things: nothing is booked,
+  // or we could not find out. Until a month has actually loaded, the picker must
+  // not present it as free — hence the explicit loading/error state rather than
+  // an optimistic empty list.
   function fetchMonth(year: number, month: number) {
     if (!cameraId) return
     const key = `${cameraId}-${year}-${month}`
     if (fetchedMonthsRef.current.has(key)) return
-    fetchedMonthsRef.current.add(key)
-    getAvailability(cameraId, year, month).then((slots) => {
-      setBookedSlots((prev) => {
-        const ids = new Set(prev.map((s) => s.bookingId))
-        return [...prev, ...slots.filter((s) => !ids.has(s.bookingId))]
+    // NOTE: marked only after the request succeeds. Marking it up front meant a
+    // single failed read left the month permanently "already loaded" — and thus
+    // permanently blank — for the rest of the session.
+    setSlotsLoading((n) => n + 1)
+    setSlotsError('')
+    getAvailability(cameraId, year, month)
+      .then((slots) => {
+        fetchedMonthsRef.current.add(key)
+        setBookedSlots((prev) => {
+          const ids = new Set(prev.map((s) => s.bookingId))
+          return [...prev, ...slots.filter((s) => !ids.has(s.bookingId))]
+        })
       })
-    })
+      .catch((e) => {
+        setSlotsError(e instanceof Error ? e.message : 'โหลดคิวไม่สำเร็จ')
+      })
+      .finally(() => setSlotsLoading((n) => n - 1))
+  }
+
+  // A rental may run past the month the customer is looking at (31 Oct → 4 Nov),
+  // and the conflict check can only see months that were fetched. Pull the
+  // neighbouring months too, plus the buffer the backend pads each side with.
+  function fetchRangeAround(year: number, month: number) {
+    for (let delta = -1; delta <= 1; delta++) {
+      const d = new Date(year, month - 1 + delta, 1)
+      fetchMonth(d.getFullYear(), d.getMonth() + 1)
+    }
   }
 
   useEffect(() => {
     if (!cameraId) return
     const now = new Date()
-    fetchMonth(now.getFullYear(), now.getMonth() + 1)
+    fetchRangeAround(now.getFullYear(), now.getMonth() + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
+
+  // A booking spanning many days can reach beyond the months loaded so far.
+  useEffect(() => {
+    if (!cameraId || !pickupDatetime) return
+    const end = returnDatetime ?? pickupDatetime
+    fetchRangeAround(pickupDatetime.getFullYear(), pickupDatetime.getMonth() + 1)
+    fetchRangeAround(end.getFullYear(), end.getMonth() + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraId, pickupDatetime, returnDatetime])
 
   // Deep link from the home page (/book?camera=X) preselects the camera. With
   // the provincial option live we must NOT skip past the area step, or everyone
@@ -158,6 +195,7 @@ function BookPage() {
     setCameraId(id)
     setPickupDatetime(null)
     setReturnDatetime(null)
+    recalcDiscount(id, durationHours)
   }
 
   function handlePickupSelect(dt: Date) {
@@ -165,8 +203,21 @@ function BookPage() {
     setReturnDatetime(addHours(dt, durationHours))
   }
 
+  // The review discount is 10% of the CURRENT price, so it has to be recomputed
+  // whenever the price moves. Leaving the figure from the moment the code was
+  // validated meant a customer who extended 3 days → 7 days still got 3 days'
+  // worth off, and paid more than the promotion promised (and the reverse when
+  // shortening, which cost the shop).
+  function recalcDiscount(nextCamera: CameraId | null, nextHours: number) {
+    if (discountStatus !== 'valid') return
+    const cam = nextCamera ? CAMERAS.find((c) => c.id === nextCamera) : null
+    if (!cam) { setDiscountAmount(0); return }
+    setDiscountAmount(Math.floor(calcPrice(cam.priceGroup, nextHours) * 0.1))
+  }
+
   function handleDurationChange(hours: number) {
     setDurationHours(hours)
+    recalcDiscount(cameraId, hours)
     if (pickupDatetime) setReturnDatetime(addHours(pickupDatetime, hours))
   }
 
@@ -209,7 +260,11 @@ function BookPage() {
     if (step === STEP_AREA && !rentalArea) errs.area = 'กรุณาเลือกพื้นที่เช่า'
     if (step === STEP_CAMERA && !cameraId) errs.camera = 'กรุณาเลือกกล้อง'
     if (step === STEP_DATE) {
-      if (!pickupDatetime) errs.pickup = isProvincial ? 'กรุณาเลือกวันเริ่มเช่า' : 'กรุณาเลือกวันและเวลารับ'
+      // Moving on while the queue failed to load would mean confirming a slot
+      // against data we never actually received.
+      if (slotsError) errs.pickup = 'ยังโหลดคิวไม่สำเร็จ กรุณากดลองใหม่ก่อน'
+      else if (slotsLoading > 0) errs.pickup = 'กำลังโหลดคิว รอสักครู่'
+      else if (!pickupDatetime) errs.pickup = isProvincial ? 'กรุณาเลือกวันเริ่มเช่า' : 'กรุณาเลือกวันและเวลารับ'
       else if (selectionConflict) errs.pickup = 'ช่วงเวลาที่เลือกซ้อนทับกับการจองอื่น กรุณาเลือกเวลาใหม่'
     }
     if (step === STEP_ADDRESS && !isProvincial) {
@@ -224,8 +279,10 @@ function BookPage() {
         if (!shippingProvince.trim()) errs.shippingProvince = 'กรุณาระบุจังหวัด'
         if (!/^\d{5}$/.test(shippingPostalCode.trim())) errs.shippingPostalCode = 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก'
       }
-      if (!customerName) errs.name = 'กรุณาระบุชื่อ'
-      if (!customerPhone) errs.phone = 'กรุณาระบุเบอร์โทร'
+      if (customerName.trim().length < 2) errs.name = 'กรุณาระบุชื่อ-นามสกุล'
+      if (!/^0\d{8,9}$/.test(customerPhone.replace(/[^0-9]/g, ''))) {
+        errs.phone = 'เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก ขึ้นต้นด้วย 0'
+      }
       if (!idCardImage) errs.idCard = 'กรุณาอัปโหลดบัตรประชาชน'
       if (!igProfileImage) errs.igProfile = 'กรุณาอัปโหลดแคปหน้าโปรไฟล์ IG หรือ Facebook'
     }
@@ -272,9 +329,19 @@ function BookPage() {
         discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',
         discountAmount: discountStatus === 'valid' ? discountAmount : 0,
       }
-      const { bookingId: id } = await createBooking(form)
+      const { bookingId: id, accessToken: token } = await createBooking(form)
       setBookingId(id)
+      setAccessToken(token)
       setStep(STEP_RECEIPT)
+
+      // The slot is secured; the photos can land while the customer reads the
+      // receipt and scans the QR. Deliberately not awaited — nothing on screen
+      // waits for Drive. If every retry fails, say so on the receipt so the
+      // customer can send them over IG instead; the booking itself still stands.
+      setImageUploadFailed(false)
+      attachImages(id, token, idCardImage, igProfileImage).then((res) => {
+        if (!res.success) setImageUploadFailed(true)
+      })
     } catch (err) {
       alert(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่')
     } finally {
@@ -461,6 +528,30 @@ function BookPage() {
             {/* Step 2: Date & time */}
             {step === STEP_DATE && camera && (
               <div>
+                {slotsError && (
+                  <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-center justify-between gap-3">
+                    <span>
+                      <strong className="block mb-0.5">โหลดคิวไม่สำเร็จ</strong>
+                      ยังไม่ทราบว่าช่วงไหนว่าง กรุณาลองใหม่ก่อนเลือกวัน
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-white text-xs font-semibold"
+                      onClick={() => {
+                        const d = pickupDatetime ?? new Date()
+                        setSlotsError('')
+                        fetchRangeAround(d.getFullYear(), d.getMonth() + 1)
+                      }}
+                    >
+                      ลองใหม่
+                    </button>
+                  </div>
+                )}
+                {!slotsError && slotsLoading > 0 && (
+                  <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
+                    กำลังโหลดคิว…
+                  </div>
+                )}
                 {/* Camera preview header */}
                 <div className="glass rounded-xl p-4 flex items-center gap-4 mb-5">
                   <div className="w-20 h-14 shrink-0 flex items-center justify-center rounded-lg" style={{ background: `${camera.color}18` }}>
@@ -576,7 +667,7 @@ function BookPage() {
                       durationHours={durationHours}
                       onSelectPickup={handlePickupSelect}
                       selectedPickup={pickupDatetime}
-                      onMonthChange={fetchMonth}
+                      onMonthChange={fetchRangeAround}
                     />
                   </>
                 ) : (
@@ -588,7 +679,7 @@ function BookPage() {
                     onSelectPickup={handlePickupSelect}
                     selectedPickup={pickupDatetime}
                     durationHours={durationHours}
-                    onMonthChange={fetchMonth}
+                    onMonthChange={fetchRangeAround}
                   />
                 )}
 
@@ -1023,6 +1114,13 @@ function BookPage() {
                   <h1 className="text-2xl font-bold mb-1">จองสำเร็จ!</h1>
                   <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
                 </div>
+                {imageUploadFailed && (
+                  <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <strong className="block mb-0.5">การจองของคุณสำเร็จแล้ว</strong>
+                    แต่ส่งรูปบัตรประชาชน/โปรไฟล์ IG ไม่สำเร็จ รบกวนส่งรูปมาที่ IG{' '}
+                    <span className="font-semibold">@miwvie_shop</span> พร้อมสลิปได้เลยค่ะ
+                  </div>
+                )}
                 <ReceiptCard
                   bookingId={bookingId}
                   form={{

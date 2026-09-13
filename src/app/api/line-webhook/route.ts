@@ -11,7 +11,7 @@ import crypto from 'crypto'
 // การตอบ/ส่งข้อความ LINE ทำผ่าน Apps Script (action lineReply / linePush) ที่ถือ
 // LINE_CHANNEL_TOKEN อยู่แล้ว — Vercel ไม่ต้องเก็บ token ของ LINE
 //
-// env: LINE_ADMIN_USER_IDS, SCRIPT_URL, ADMIN_PIN (default 1234),
+// env: LINE_ADMIN_USER_IDS, SCRIPT_URL, ADMIN_PIN (required, no default),
 //      LINE_CHANNEL_SECRET (ไม่บังคับ — ตั้งไว้เพื่อ verify signature)
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? ''
@@ -20,7 +20,10 @@ const ADMIN_IDS = (process.env.LINE_ADMIN_USER_IDS ?? '')
   .map((s) => s.trim())
   .filter(Boolean)
 const SCRIPT_URL = process.env.SCRIPT_URL ?? ''
-const ADMIN_PIN = process.env.ADMIN_PIN ?? '1234'
+// No fallback. If the PIN is not configured the queue commands must stop
+// working, not fall back to a value anyone could guess — the Apps Script side
+// treats this same string as full admin authority.
+const ADMIN_PIN = process.env.ADMIN_PIN ?? ''
 
 const MSG_LIMIT = 4500 // LINE จำกัด 5000/ข้อความ เผื่อไว้
 const MAX_MSGS = 5 // LINE ส่งได้สูงสุด 5 ข้อความ/ครั้ง
@@ -33,10 +36,17 @@ const TH_WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 export async function POST(req: NextRequest) {
   const raw = await req.text()
 
-  if (CHANNEL_SECRET) {
-    const sig = req.headers.get('x-line-signature') ?? ''
-    const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(raw).digest('base64')
-    if (sig !== expected) return new NextResponse('bad signature', { status: 401 })
+  // LINE requires the signature to be verified before an event is processed.
+  // This used to be skipped whenever the secret happened to be unset, which
+  // meant anyone who found the URL could post events that looked like the shop.
+  // Refuse to serve at all rather than serve unauthenticated.
+  if (!CHANNEL_SECRET) return new NextResponse('webhook not configured', { status: 503 })
+  const sig = req.headers.get('x-line-signature') ?? ''
+  const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(raw).digest('base64')
+  const sigBuf = Buffer.from(sig)
+  const expBuf = Buffer.from(expected)
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return new NextResponse('bad signature', { status: 401 })
   }
 
   let body: { events?: LineEvent[] }
@@ -63,8 +73,11 @@ async function handleEvent(ev: LineEvent) {
   const cmd = parseCommand((ev.message.text ?? '').trim())
   if (!cmd) return // ไม่ใช่คำสั่ง — ปล่อยให้ auto-reply ของ LINE จัดการ
 
-  // เฉพาะแอดมิน (ถ้าไม่ได้ตั้ง ADMIN_IDS จะตอบทุกคน)
-  if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(ev.source?.userId ?? '')) return
+  // Admin only. An empty allow-list used to mean "answer everybody", which
+  // handed the shop's whole queue — names, IG handles, addresses — to any
+  // stranger who messaged the OA.
+  if (ADMIN_IDS.length === 0) return
+  if (!ADMIN_IDS.includes(ev.source?.userId ?? '')) return
 
   let texts: string[]
   try {
@@ -79,7 +92,7 @@ async function handleEvent(ev: LineEvent) {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  if (searchParams.get('pin') !== ADMIN_PIN) {
+  if (!ADMIN_PIN || searchParams.get('pin') !== ADMIN_PIN) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   const cmd = parseCommand((searchParams.get('q') ?? '').trim())

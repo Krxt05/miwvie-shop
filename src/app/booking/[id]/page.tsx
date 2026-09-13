@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, Clock, CheckCircle, Package, RotateCcw, XCircle, RefreshCw } from 'lucide-react'
-import { getBooking } from '@/lib/api'
+import { getBooking, ApiError } from '@/lib/api'
 import { PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import { Booking } from '@/types'
 import Badge from '@/components/ui/Badge'
@@ -44,22 +44,40 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
   },
 }
 
-export default function BookingStatusPage() {
+function BookingStatusInner() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const params = useSearchParams()
+  // The booking ID is sequential and therefore guessable, so it alone no longer
+  // unlocks the customer's own details — the token issued when the booking was
+  // made does. An old link without one still shows the status, just not the
+  // personal parts.
+  const token = params.get('t') ?? ''
   const [booking, setBooking] = useState<Booking | null>(null)
+  const [limited, setLimited] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   async function load() {
     setLoading(true)
-    const b = await getBooking(id)
-    if (!b) setNotFound(true)
-    else setBooking(b)
-    setLoading(false)
+    setLoadError('')
+    setNotFound(false)
+    try {
+      const res = await getBooking(id, token)
+      // "No such booking" and "we could not reach the system" used to look
+      // identical here, which told customers with a perfectly good booking that
+      // it did not exist.
+      if (!res) setNotFound(true)
+      else { setBooking(res.booking); setLimited(res.limited) }
+    } catch (e) {
+      setLoadError(e instanceof ApiError ? e.message : 'เชื่อมต่อไม่ได้ กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => { load() }, [id, token])
 
   const status = booking ? STATUS_CONFIG[booking.bookingStatus] ?? STATUS_CONFIG.pending : null
   const StatusIcon = status?.icon ?? Clock
@@ -85,6 +103,16 @@ export default function BookingStatusPage() {
           </div>
         )}
 
+        {loadError && !loading && (
+          <div className="text-center py-20">
+            <p className="text-4xl mb-4">⚠️</p>
+            <h2 className="text-xl font-bold mb-2">ยังดูสถานะไม่ได้ตอนนี้</h2>
+            <p className="text-gray-400 text-sm mb-1">{loadError}</p>
+            <p className="text-gray-500 text-xs mb-6">การจองของคุณไม่ได้หายไป ระบบแค่ตอบกลับไม่ได้ชั่วคราว</p>
+            <Button onClick={() => load()} variant="primary">ลองใหม่</Button>
+          </div>
+        )}
+
         {notFound && !loading && (
           <div className="text-center py-20">
             <p className="text-4xl mb-4">🔍</p>
@@ -93,6 +121,13 @@ export default function BookingStatusPage() {
             <Button onClick={() => router.push('/book')} variant="primary">
               จองใหม่
             </Button>
+          </div>
+        )}
+
+        {booking && status && !loading && limited && (
+          <div className="mb-4 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+            ลิงก์นี้แสดงได้เฉพาะสถานะการจอง — เปิดจากลิงก์ในใบจองที่ได้ตอนจองเสร็จ
+            เพื่อดูรายละเอียดทั้งหมด หรือทักมาที่ IG @miwvie_shop ได้เลยค่ะ
           </div>
         )}
 
@@ -215,5 +250,13 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-gray-500 shrink-0">{label}</span>
       <span className="text-right text-gray-700">{value}</span>
     </div>
+  )
+}
+
+export default function BookingStatusPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-gradient-dark" />}>
+      <BookingStatusInner />
+    </Suspense>
   )
 }

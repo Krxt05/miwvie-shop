@@ -40,6 +40,7 @@ export default function AdminPage() {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState('')
   const [discountCodes, setDiscountCodes] = useState<Record<string, string>>({})
   const [codeLoading, setCodeLoading] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -107,23 +108,36 @@ export default function AdminPage() {
     const res = await deleteBlockedSlot(id, pin)
     if (res.success) {
       setBlockedSlots((prev) => prev.filter((b) => b.id !== id))
+    } else {
+      setActionError(res.error || 'ลบช่วงที่บล็อกไม่สำเร็จ')
     }
     setBlockDeletingId(null)
   }
 
   async function handleAction(bookingId: string, status: BookingStatus) {
     setActionLoading(bookingId)
-    const res = await updateBookingStatus(bookingId, status, pin)
-    if (res.success) {
+    setActionError('')
+    try {
+      const res = await updateBookingStatus(bookingId, status, pin)
+      if (!res.success) {
+        setActionError(res.error || 'อัปเดตสถานะไม่สำเร็จ')
+        return
+      }
       setBookings((prev) =>
-        prev.map((b) =>
-          b.bookingId === bookingId
-            ? { ...b, bookingStatus: status, paymentStatus: status === 'confirmed' ? 'confirmed' : b.paymentStatus }
-            : b,
-        ),
+        prev.map((b) => {
+          if (b.bookingId !== bookingId) return b
+          // Take the row the server actually saved. Patching only the status
+          // locally left returned_at stale, so the heatmap kept a returned
+          // provincial unit blocked for its full 3-day tail until a refresh.
+          if (res.booking) return res.booking
+          return { ...b, bookingStatus: status, paymentStatus: status === 'confirmed' ? 'confirmed' : b.paymentStatus }
+        }),
       )
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'อัปเดตสถานะไม่สำเร็จ')
+    } finally {
+      setActionLoading(null)
     }
-    setActionLoading(null)
   }
 
   async function handleCancel(bookingId: string) {
@@ -491,6 +505,11 @@ export default function AdminPage() {
             <div className="text-center py-12 text-gray-400">ไม่มีรายการ</div>
           )}
 
+          {actionError && (
+            <div className="mb-3 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800">
+              {actionError}
+            </div>
+          )}
           {filtered.map((b) => {
             const isExpanded = expanded === b.bookingId
             const actions = STATUS_ACTIONS[b.bookingStatus] ?? []
@@ -514,6 +533,15 @@ export default function AdminPage() {
                       } variant={b.bookingStatus} />
                       {Number(b.discountAmount) > 0 && (
                         <span className="text-[10px] text-gold border border-gold/30 rounded-full px-1.5 py-0.5">ส่วนลด</span>
+                      )}
+                      {/* Photos arrive on a second request now, so a booking can
+                          legitimately exist for a few seconds without them — and
+                          stay that way if every retry failed. Surface it here so
+                          nobody confirms a rental with no ID on file. */}
+                      {(!b.idCardImage || !b.igProfileImage) && b.bookingStatus !== 'cancelled' && (
+                        <span className="text-[10px] text-amber-700 bg-amber-100 border border-amber-300 rounded-full px-1.5 py-0.5">
+                          ⚠️ หลักฐานไม่ครบ
+                        </span>
                       )}
                     </div>
                     <p className="font-semibold text-sm truncate">{String(b.customerName)}</p>
@@ -619,6 +647,13 @@ export default function AdminPage() {
                             >
                               <ExternalLink size={12} /> IG Profile
                             </a>
+                          )}
+                          {(!b.idCardImage || !b.igProfileImage) && (
+                            <span className="text-xs text-amber-700">
+                              ⚠️ ยังไม่ได้รับ{!b.idCardImage ? 'รูปบัตรประชาชน' : ''}
+                              {!b.idCardImage && !b.igProfileImage ? ' และ' : ''}
+                              {!b.igProfileImage ? 'รูปโปรไฟล์ IG' : ''} — ขอจากลูกค้าทาง IG ก่อนยืนยัน
+                            </span>
                           )}
                         </div>
 
