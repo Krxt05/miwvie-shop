@@ -1173,24 +1173,26 @@ function setupSchedule() {
 function pushPromoMorning() { pushPromo('morning') }
 function pushPromoEvening() { pushPromo('evening') }
 
+// Returns what actually happened rather than just logging it, so sendPromoNow
+// can report a LINE rejection instead of a bare success.
 function pushPromo(slot) {
-  const pin = getAdminPin()
-  if (!pin) { Logger.log('pushPromo: ADMIN_PIN not set'); return }
   try {
     const res = UrlFetchApp.fetch(
       LINE_BOT_BASE + '/api/promo?slot=' + encodeURIComponent(slot),
       { muteHttpExceptions: true }
     )
     if (res.getResponseCode() !== 200) {
-      Logger.log('pushPromo ' + slot + ': HTTP ' + res.getResponseCode())
-      return
+      return { error: 'promo endpoint HTTP ' + res.getResponseCode() }
     }
     const data = JSON.parse(res.getContentText())
     const texts = data.texts || []
-    if (!texts.length) { Logger.log('pushPromo: no texts'); return }
-    linePushOne(texts)
+    if (!texts.length) return { error: 'no texts' }
+    const sent = linePushOne(texts)
+    Logger.log('pushPromo ' + slot + ' -> ' + JSON.stringify(sent))
+    return sent
   } catch (e) {
     Logger.log('pushPromo ' + slot + ' error: ' + e.message)
+    return { error: e.message }
   }
 }
 
@@ -1240,8 +1242,9 @@ function installPromoSchedule(pin) {
 function sendPromoNow(pin, slot) {
   const authErr = checkPin(pin)
   if (authErr) return authErr
-  pushPromo(slot === 'evening' ? 'evening' : 'morning')
-  return { success: true }
+  const result = pushPromo(slot === 'evening' ? 'evening' : 'morning')
+  if (result && result.error) return { error: result.error }
+  return { success: Boolean(result && result.ok), lineStatus: result ? result.code : null }
 }
 
 function listTriggers(pin) {

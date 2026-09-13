@@ -6,6 +6,15 @@ const SCRIPT_URL = process.env.SCRIPT_URL ?? ''
 const UPSTREAM_TIMEOUT_MS = 45_000
 
 /**
+ * The calendar only has to be fresh enough to say which cameras are free over a
+ * multi-day window, so a few minutes of staleness costs nothing — and it spares
+ * the shop's phone a 30-second wait when the /promo page is opened twice, plus
+ * Apps Script the repeat work.
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000
+let cache: { at: number; key: string; value: Partial<Record<CameraId, BookedSlot[]>> } | null = null
+
+/**
  * The promo caption for a slot: what the shop should paste into its Facebook
  * groups this morning or this evening. Built fresh each call from the live
  * calendar and the current price list, so the post never advertises a camera
@@ -39,26 +48,44 @@ async function loadAvailability(now: Date): Promise<Partial<Record<CameraId, Boo
   if (!SCRIPT_URL || SCRIPT_URL.includes('PLACEHOLDER')) return {}
 
   const months = monthKeys(now)
-  const merged: Partial<Record<CameraId, BookedSlot[]>> = {}
+  const key = months.join(',')
+  if (cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) return cache.value
 
-  for (const month of months) {
-    const cameras = await fetchMonth(month)
+  // In parallel: two sequential reads of a backend that regularly takes fifteen
+  // seconds is most of a minute before the page shows anything.
+  const results = await Promise.all(months.map(fetchMonth))
+
+  const merged: Partial<Record<CameraId, BookedSlot[]>> = {}
+  for (const cameras of results) {
     for (const [id, slots] of Object.entries(cameras)) {
-      const key = id as CameraId
-      const seen = new Set((merged[key] ?? []).map((s) => s.bookingId))
-      merged[key] = [...(merged[key] ?? []), ...slots.filter((s) => !seen.has(s.bookingId))]
+      const camera = id as CameraId
+      const seen = new Set((merged[camera] ?? []).map((s) => s.bookingId))
+      merged[camera] = [...(merged[camera] ?? []), ...slots.filter((s) => !seen.has(s.bookingId))]
     }
   }
+
+  // Only cache a real answer, so an outage does not pin an empty calendar in
+  // place for five minutes.
+  if (Object.keys(merged).length > 0) cache = { at: Date.now(), key, value: merged }
   return merged
 }
 
+/**
+ * Only the months the advertised window actually touches. The window is at most
+ * four days long, so it reaches next month only near the end of this one —
+ * fetching both regardless doubled the wait for no benefit on most days.
+ */
 function monthKeys(now: Date): string[] {
   const local = new Date(now.getTime() + 7 * 60 * 60 * 1000)
-  const keys: string[] = []
-  for (let delta = 0; delta <= 1; delta++) {
-    const d = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + delta, 1))
-    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`)
-  }
+  const label = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+
+  const start = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()))
+  // Widest case: up to 5 days until the advertised window starts, plus its 3-day
+  // length, plus the 3-day provincial buffer the backend pads each side with.
+  const end = new Date(start.getTime() + 11 * 86400000)
+
+  const keys = [label(start)]
+  if (label(end) !== keys[0]) keys.push(label(end))
   return keys
 }
 
