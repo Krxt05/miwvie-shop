@@ -58,8 +58,22 @@
 - Apps Script Script Property `ADMIN_PIN` — **ตั้งแล้ว**
 - Vercel env `LINE_CHANNEL_SECRET` — **ยังไม่ได้ตั้ง (ต้องทำ)**
 
-## 5. งานที่เหลือ
+## 5. Migration ไฟล์ Drive (F01) — ทำเสร็จแล้ว
 
-1. **ตั้ง `LINE_CHANNEL_SECRET`** — คำสั่งเช็คคิวในแชท LINE ใช้ไม่ได้จนกว่าจะตั้ง (auto-push 16:00 ยังทำงาน)
-2. **Migration ไฟล์ Drive เก่า** ให้เป็น private (ไฟล์ใหม่ private แล้ว)
-3. F12 document workflow แบบเต็ม / F14 pending expiry / F15 upgrade + regression tests
+`migrateDocumentSharing` (Apps Script @42) ทำงานเป็นชุดๆ เพราะ Apps Script ตัดที่ 6 นาที
+
+| ขั้น | ผล |
+|---|---|
+| Dry run (ไม่แก้อะไร) | ตรวจ 104 ไฟล์ — **เปิดสาธารณะทั้ง 104** |
+| Apply | เปลี่ยนเป็น private **104/104** |
+| ตรวจซ้ำ | เปิดสาธารณะเหลือ **0** · private **104** |
+| เทสคนนอกเปิดลิงก์ | **HTTP 401 "ลงชื่อเข้าใช้"** (เดิมเปิดดูรูปบัตรได้เลย) |
+
+ไฟล์ทั้งหมดอยู่ในโฟลเดอร์ของบัญชีร้าน แอดมินที่ล็อกอิน Google บัญชีนั้นยังเปิดได้ตามปกติ
+
+## 6. งานที่เหลือ
+
+1. ⛔ **`LINE_CHANNEL_SECRET` — ติดที่ต้องล็อกอิน LINE Business ID** ลองเข้า LINE Developers Console ผ่าน browser แล้ว ติดหน้า login + 2FA ซึ่งกรอกรหัสผ่านแทนเจ้าของไม่ได้ ต้องให้เจ้าของหยิบค่ามาเอง
+   - ผลตอนนี้: webhook คืน 503 → **คำสั่งเช็คคิวในแชท LINE ใช้ไม่ได้** (auto-push 16:00 ยังทำงานปกติ เพราะใช้คนละเส้นทาง)
+   - วิธีตั้ง: `printf '<secret>' | vercel env add LINE_CHANNEL_SECRET production`
+2. F12 document workflow แบบเต็ม / F14 pending expiry / F15 upgrade + regression tests
