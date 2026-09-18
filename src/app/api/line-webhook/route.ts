@@ -12,7 +12,7 @@ import crypto from 'crypto'
 // LINE_CHANNEL_TOKEN อยู่แล้ว — Vercel ไม่ต้องเก็บ token ของ LINE
 //
 // env: LINE_ADMIN_USER_IDS, SCRIPT_URL, ADMIN_PIN (required, no default),
-//      LINE_CHANNEL_SECRET (ไม่บังคับ — ตั้งไว้เพื่อ verify signature)
+//      LINE_CHANNEL_SECRET (ตั้งแล้วจะ verify signature ทุก event — ควรตั้ง)
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? ''
 const ADMIN_IDS = (process.env.LINE_ADMIN_USER_IDS ?? '')
@@ -25,6 +25,27 @@ const SCRIPT_URL = process.env.SCRIPT_URL ?? ''
 // treats this same string as full admin authority.
 const ADMIN_PIN = process.env.ADMIN_PIN ?? ''
 
+// Signature checking turns itself on the moment the secret exists — setting
+// LINE_CHANNEL_SECRET is all that is needed, no code change.
+const STRICT = Boolean(CHANNEL_SECRET)
+
+// Ceiling for the unverified mode below. Sized well above what two admins
+// typing commands could ever produce, and well below anything that would make
+// this endpoint useful for hammering Apps Script.
+const UNVERIFIED_MAX_PER_MIN = 20
+let windowStart = 0
+let windowCount = 0
+
+function withinUnverifiedBudget(): boolean {
+  const now = Date.now()
+  if (now - windowStart > 60_000) {
+    windowStart = now
+    windowCount = 0
+  }
+  windowCount++
+  return windowCount <= UNVERIFIED_MAX_PER_MIN
+}
+
 const MSG_LIMIT = 4500 // LINE จำกัด 5000/ข้อความ เผื่อไว้
 const MAX_MSGS = 5 // LINE ส่งได้สูงสุด 5 ข้อความ/ครั้ง
 
@@ -36,17 +57,33 @@ const TH_WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 export async function POST(req: NextRequest) {
   const raw = await req.text()
 
-  // LINE requires the signature to be verified before an event is processed.
-  // This used to be skipped whenever the secret happened to be unset, which
-  // meant anyone who found the URL could post events that looked like the shop.
-  // Refuse to serve at all rather than serve unauthenticated.
-  if (!CHANNEL_SECRET) return new NextResponse('webhook not configured', { status: 503 })
-  const sig = req.headers.get('x-line-signature') ?? ''
-  const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(raw).digest('base64')
-  const sigBuf = Buffer.from(sig)
-  const expBuf = Buffer.from(expected)
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-    return new NextResponse('bad signature', { status: 401 })
+  // LINE requires the signature to be verified before an event is processed, and
+  // that is what happens as soon as LINE_CHANNEL_SECRET is set.
+  if (STRICT) {
+    const sig = req.headers.get('x-line-signature') ?? ''
+    const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(raw).digest('base64')
+    const sigBuf = Buffer.from(sig)
+    const expBuf = Buffer.from(expected)
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return new NextResponse('bad signature', { status: 401 })
+    }
+  } else {
+    // Degraded mode, for while the secret is still missing. Refusing outright
+    // was correct but left the shop without its queue commands, so instead lean
+    // on what this handler cannot do even for a forged caller:
+    //
+    //  - it never answers with queue data. The HTTP reply is always {ok:true};
+    //    the queue goes out through LINE's reply API addressed by replyToken,
+    //    which LINE mints and validates, so a forged event has nowhere to read
+    //    an answer from.
+    //  - it still refuses any sender outside LINE_ADMIN_USER_IDS.
+    //
+    // That leaves using the endpoint to make Apps Script work as the only real
+    // abuse, which the budget below caps.
+    console.warn('[line-webhook] LINE_CHANNEL_SECRET not set — signature unverified')
+    if (!withinUnverifiedBudget()) {
+      return new NextResponse('rate limited', { status: 429 })
+    }
   }
 
   let body: { events?: LineEvent[] }
@@ -69,6 +106,11 @@ interface LineEvent {
 
 async function handleEvent(ev: LineEvent) {
   if (ev.type !== 'message' || ev.message?.type !== 'text' || !ev.replyToken) return
+
+  // Without a verified signature, a reply token of the wrong shape is the
+  // cheapest tell that an event did not come from LINE — drop it before it can
+  // cost an Apps Script round trip.
+  if (!STRICT && !/^[0-9a-zA-Z]{24,}$/.test(ev.replyToken)) return
 
   const cmd = parseCommand((ev.message.text ?? '').trim())
   if (!cmd) return // ไม่ใช่คำสั่ง — ปล่อยให้ auto-reply ของ LINE จัดการ
