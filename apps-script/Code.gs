@@ -608,6 +608,7 @@ function createBooking(data) {
   let bookingId
   let accessToken
   let discountAmount = 0
+  let totalAmount = 0
   try {
     const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
 
@@ -676,7 +677,7 @@ function createBooking(data) {
 
     // Money is recomputed here, never copied from the request: a client that
     // posts its own price/total could otherwise store any number it liked.
-    const totalAmount = quote.price - discountAmount + quote.deliveryFee
+    totalAmount = quote.price - discountAmount + quote.deliveryFee
 
     // Write by header NAME, not by position — the live sheet has a stray unnamed
     // column, so a positional appendRow lands every field after it in the wrong
@@ -737,8 +738,15 @@ function createBooking(data) {
     lock.releaseLock()
   }
 
-  // LINE notification — outside the lock, network call shouldn't block others
-  sendLineNotify(bookingId, data, discountAmount)
+  // LINE notification — outside the lock, network call shouldn't block others.
+  // Hand it the figures that were actually stored. The browser no longer sends
+  // price or total (the server computes them), so reading them off `data` put
+  // "💰 undefined ฿" in every new-booking message.
+  sendLineNotify(bookingId, Object.assign({}, data, {
+    price: quote.price,
+    deliveryFee: quote.deliveryFee,
+    totalAmount: totalAmount,
+  }), discountAmount)
 
   return { success: true, bookingId: bookingId, accessToken: accessToken }
 }
