@@ -34,16 +34,14 @@ const CAMERA_NAMES = {
   IXY30s: 'Canon IXY 30s',
   IXY930IS: 'Canon IXY 930 IS',
   IXY510IS: 'Canon IXY 510 IS',
-  IXY910IS: 'Canon IXY 910 IS',
   IXY200: 'Canon IXY 200 (IXUS 185)'
 }
 
 const CAMERA_QUANTITY = {
   IXY10s: 1,
-  IXY30s: 1,
+  IXY30s: 2,
   IXY930IS: 2,
   IXY510IS: 1,
-  IXY910IS: 1,
   IXY200: 1
 }
 
@@ -56,7 +54,7 @@ const PRICE_TABLES = {
 }
 const EXTRA_DAY_RATE = { A: 100, B: 90 }
 const CAMERA_GROUP = {
-  IXY10s: 'A', IXY30s: 'A', IXY930IS: 'A', IXY510IS: 'A', IXY910IS: 'B', IXY200: 'B',
+  IXY10s: 'A', IXY30s: 'A', IXY930IS: 'A', IXY510IS: 'A', IXY200: 'B',
 }
 const PROVINCIAL_SHIPPING_FEE = 50
 const LOCAL_DELIVERY_FEE = 20

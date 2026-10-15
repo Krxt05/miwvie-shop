@@ -1,4 +1,4 @@
-export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY510IS' | 'IXY910IS' | 'IXY200'
+export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY510IS' | 'IXY200'
 export type PriceGroup = 'A' | 'B'
 
 export interface PriceTable {

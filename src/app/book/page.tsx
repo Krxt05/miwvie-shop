@@ -46,9 +46,12 @@ function BookPage() {
   const router = useRouter()
 
   const [step, setStep] = useState(0)
-  const [cameraId, setCameraId] = useState<CameraId | null>(
-    (params.get('camera') as CameraId) ?? null,
-  )
+  // Ignore a stale ?camera= (e.g. an old link to a retired model) so the
+  // customer lands on the picker instead of a blank date step.
+  const [cameraId, setCameraId] = useState<CameraId | null>(() => {
+    const id = params.get('camera')
+    return CAMERAS.some((c) => c.id === id) ? (id as CameraId) : null
+  })
   // Never pre-pick an area when the choice is live — the customer has to make it
   // themselves, even when they deep-linked in with a camera already chosen.
   const [rentalArea, setRentalArea] = useState<RentalArea | null>(

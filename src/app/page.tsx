@@ -244,7 +244,7 @@ export default function Home() {
                     Group {group}
                   </span>
                   <p className="text-gray-500 text-xs">
-                    {group === 'A' ? 'Canon IXY 10s · 30s · 930 IS · 510 IS' : 'Canon IXUS 185 · IXY 910 IS'}
+                    {group === 'A' ? 'Canon IXY 10s · 30s · 930 IS · 510 IS' : 'Canon IXUS 185'}
                   </p>
                 </div>
                 <div className="divide-y divide-pink-50 px-6">
