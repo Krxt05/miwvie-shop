@@ -5,10 +5,11 @@ import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { addDays, addHours, format, differenceInHours } from 'date-fns'
 import { th } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader, MapPin } from 'lucide-react'
 import {
   CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE,
   PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
+  isDeliveryTime, DELIVERY_HOURS_LABEL, SHOP_MAP_URL, LOCAL_DELIVERY_FEE,
 } from '@/lib/cameras'
 import { getAvailability, createBooking, attachImages, validateDiscountCode } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
@@ -40,6 +41,8 @@ function formatBookingDate(date: Date, area: RentalArea): string {
 // step, while the provincial flow folds the shipping address into the
 // personal-info step, so it runs one step shorter.
 const PROVINCIAL_ENABLED = true
+
+const QUEUE_LOADING_MSG = 'กำลังโหลดคิว รอสักครู่'
 
 function BookPage() {
   const params = useSearchParams()
@@ -83,8 +86,14 @@ function BookPage() {
   const [bookingId, setBookingId] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [imageUploadFailed, setImageUploadFailed] = useState(false)
-  const [slotsLoading, setSlotsLoading] = useState(0)
-  const [slotsError, setSlotsError] = useState('')
+  // Queue load state per camera, so a slow or failed read for one model can't
+  // show up as "loading"/"failed" after the customer has switched to another.
+  const [queueStatus, setQueueStatus] = useState<
+    Record<string, { state: 'loading' | 'loaded' | 'error'; error?: string }>
+  >({})
+  const currentQueue = cameraId ? queueStatus[cameraId] : undefined
+  const slotsLoading = currentQueue?.state === 'loading' ? 1 : 0
+  const slotsError = currentQueue?.state === 'error' ? currentQueue.error || 'โหลดคิวไม่สำเร็จ' : ''
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
@@ -92,6 +101,15 @@ function BookPage() {
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
   const isProvincial = rentalArea === 'provincial'
+  const pickupDeliveryOk = !pickupDatetime || isDeliveryTime(pickupDatetime)
+  const returnDeliveryOk = !returnDatetime || isDeliveryTime(returnDatetime)
+
+  // Going back and moving the time out of delivery hours drops a delivery that
+  // was already chosen, rather than leaving an option the shop can't fulfil.
+  useEffect(() => {
+    if (!pickupDeliveryOk) setPickupType('self')
+    if (!returnDeliveryOk) setReturnType('self')
+  }, [pickupDeliveryOk, returnDeliveryOk])
 
   // Step indices per flow. -1 = the step doesn't exist in this flow.
   // Provincial has no standalone address step — the shipping fields live in INFO.
@@ -118,60 +136,69 @@ function BookPage() {
     ? DURATION_OPTIONS.filter((o) => o.hours >= MIN_PROVINCIAL_DURATION_HOURS)
     : DURATION_OPTIONS
 
-  const fetchedMonthsRef = useRef<Set<string>>(new Set())
+  // Tell the customer the queue has arrived instead of leaving them guessing:
+  // a short "loaded" note, and drop the "still loading" error from an earlier
+  // tap on Next so it doesn't linger after the data is in.
+  const [queueJustLoaded, setQueueJustLoaded] = useState(false)
+  const prevSlotsLoadingRef = useRef(0)
+  useEffect(() => {
+    const was = prevSlotsLoadingRef.current
+    prevSlotsLoadingRef.current = slotsLoading
+    if (!(was > 0 && slotsLoading === 0)) return
+    setErrors((e) => {
+      if (e.pickup !== QUEUE_LOADING_MSG) return e
+      const rest = { ...e }
+      delete rest.pickup
+      return rest
+    })
+    if (slotsError) return
+    setQueueJustLoaded(true)
+    const t = setTimeout(() => setQueueJustLoaded(false), 4000)
+    return () => clearTimeout(t)
+  }, [slotsLoading, slotsError])
+
+  const fetchedCamerasRef = useRef<Set<string>>(new Set())
+  const inFlightRef = useRef<Set<string>>(new Set())
 
   // An empty calendar means one of two very different things: nothing is booked,
-  // or we could not find out. Until a month has actually loaded, the picker must
-  // not present it as free — hence the explicit loading/error state rather than
-  // an optimistic empty list.
-  function fetchMonth(year: number, month: number) {
+  // or we could not find out. Until the queue has actually loaded, the picker
+  // must not present it as free — hence the explicit loading/error state rather
+  // than an optimistic empty list.
+  //
+  // The whole upcoming queue for a camera comes back in a single read, so a
+  // rental running past the month on screen (31 Oct → 4 Nov) is covered too.
+  function fetchCameraQueue() {
     if (!cameraId) return
-    const key = `${cameraId}-${year}-${month}`
-    if (fetchedMonthsRef.current.has(key)) return
-    // NOTE: marked only after the request succeeds. Marking it up front meant a
-    // single failed read left the month permanently "already loaded" — and thus
-    // permanently blank — for the rest of the session.
-    setSlotsLoading((n) => n + 1)
-    setSlotsError('')
-    getAvailability(cameraId, year, month)
+    const key = cameraId
+    if (fetchedCamerasRef.current.has(key) || inFlightRef.current.has(key)) return
+    // NOTE: marked loaded only after the request succeeds. Marking it up front
+    // meant a single failed read left the queue permanently "already loaded" —
+    // and thus permanently blank — for the rest of the session.
+    inFlightRef.current.add(key)
+    setQueueStatus((q) => ({ ...q, [key]: { state: 'loading' } }))
+    // Anything that ended before yesterday can't clash with a new booking
+    const from = addDays(new Date(), -1)
+    from.setHours(0, 0, 0, 0)
+    getAvailability(key, { from })
       .then((slots) => {
-        fetchedMonthsRef.current.add(key)
+        fetchedCamerasRef.current.add(key)
         setBookedSlots((prev) => {
           const ids = new Set(prev.map((s) => s.bookingId))
           return [...prev, ...slots.filter((s) => !ids.has(s.bookingId))]
         })
+        setQueueStatus((q) => ({ ...q, [key]: { state: 'loaded' } }))
       })
       .catch((e) => {
-        setSlotsError(e instanceof Error ? e.message : 'โหลดคิวไม่สำเร็จ')
+        const error = e instanceof Error ? e.message : 'โหลดคิวไม่สำเร็จ'
+        setQueueStatus((q) => ({ ...q, [key]: { state: 'error', error } }))
       })
-      .finally(() => setSlotsLoading((n) => n - 1))
-  }
-
-  // A rental may run past the month the customer is looking at (31 Oct → 4 Nov),
-  // and the conflict check can only see months that were fetched. Pull the
-  // neighbouring months too, plus the buffer the backend pads each side with.
-  function fetchRangeAround(year: number, month: number) {
-    for (let delta = -1; delta <= 1; delta++) {
-      const d = new Date(year, month - 1 + delta, 1)
-      fetchMonth(d.getFullYear(), d.getMonth() + 1)
-    }
+      .finally(() => inFlightRef.current.delete(key))
   }
 
   useEffect(() => {
-    if (!cameraId) return
-    const now = new Date()
-    fetchRangeAround(now.getFullYear(), now.getMonth() + 1)
+    fetchCameraQueue()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
-
-  // A booking spanning many days can reach beyond the months loaded so far.
-  useEffect(() => {
-    if (!cameraId || !pickupDatetime) return
-    const end = returnDatetime ?? pickupDatetime
-    fetchRangeAround(pickupDatetime.getFullYear(), pickupDatetime.getMonth() + 1)
-    fetchRangeAround(end.getFullYear(), end.getMonth() + 1)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, pickupDatetime, returnDatetime])
 
   // Deep link from the home page (/book?camera=X) preselects the camera. With
   // the provincial option live we must NOT skip past the area step, or everyone
@@ -266,13 +293,15 @@ function BookPage() {
       // Moving on while the queue failed to load would mean confirming a slot
       // against data we never actually received.
       if (slotsError) errs.pickup = 'ยังโหลดคิวไม่สำเร็จ กรุณากดลองใหม่ก่อน'
-      else if (slotsLoading > 0) errs.pickup = 'กำลังโหลดคิว รอสักครู่'
+      else if (slotsLoading > 0) errs.pickup = QUEUE_LOADING_MSG
       else if (!pickupDatetime) errs.pickup = isProvincial ? 'กรุณาเลือกวันเริ่มเช่า' : 'กรุณาเลือกวันและเวลารับ'
       else if (selectionConflict) errs.pickup = 'ช่วงเวลาที่เลือกซ้อนทับกับการจองอื่น กรุณาเลือกเวลาใหม่'
     }
     if (step === STEP_ADDRESS && !isProvincial) {
-      if (pickupType === 'delivery' && !pickupAddress) errs.pickupAddr = 'กรุณาระบุที่อยู่รับ'
-      if (returnType === 'delivery' && !effectiveReturnAddress) errs.returnAddr = 'กรุณาระบุที่อยู่คืน'
+      if (pickupType === 'delivery' && !pickupDeliveryOk) errs.pickupAddr = `Delivery ได้เฉพาะ ${DELIVERY_HOURS_LABEL} น.`
+      else if (pickupType === 'delivery' && !pickupAddress) errs.pickupAddr = 'กรุณาระบุที่อยู่รับ'
+      if (returnType === 'delivery' && !returnDeliveryOk) errs.returnAddr = `ให้ร้านรับได้เฉพาะ ${DELIVERY_HOURS_LABEL} น.`
+      else if (returnType === 'delivery' && !effectiveReturnAddress) errs.returnAddr = 'กรุณาระบุที่อยู่คืน'
     }
     if (step === STEP_INFO) {
       if (isProvincial) {
@@ -439,7 +468,7 @@ function BookPage() {
                 </div>
                 <span
                   className={`text-xs whitespace-nowrap ${
-                    i === step ? 'text-gray-800' : 'text-gray-400'
+                    i === step ? 'text-gray-800 font-medium' : 'hidden sm:inline text-gray-400'
                   }`}
                 >
                   {s}
@@ -540,20 +569,28 @@ function BookPage() {
                     <button
                       type="button"
                       className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-white text-xs font-semibold"
-                      onClick={() => {
-                        const d = pickupDatetime ?? new Date()
-                        setSlotsError('')
-                        fetchRangeAround(d.getFullYear(), d.getMonth() + 1)
-                      }}
+                      onClick={fetchCameraQueue}
                     >
                       ลองใหม่
                     </button>
                   </div>
                 )}
                 {!slotsError && slotsLoading > 0 && (
-                  <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
-                    กำลังโหลดคิว…
+                  <div role="status" className="mb-4 flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
+                    <Loader size={16} className="animate-spin text-pink shrink-0" />
+                    กำลังโหลดคิวว่างของกล้องรุ่นนี้…
                   </div>
+                )}
+                {!slotsError && slotsLoading === 0 && queueJustLoaded && (
+                  <motion.div
+                    role="status"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700"
+                  >
+                    <CheckIcon size={16} className="shrink-0" />
+                    โหลดคิวเสร็จแล้ว เลือกวันและเวลาได้เลย
+                  </motion.div>
                 )}
                 {/* Camera preview header */}
                 <div className="glass rounded-xl p-4 flex items-center gap-4 mb-5">
@@ -670,7 +707,6 @@ function BookPage() {
                       durationHours={durationHours}
                       onSelectPickup={handlePickupSelect}
                       selectedPickup={pickupDatetime}
-                      onMonthChange={fetchRangeAround}
                     />
                   </>
                 ) : (
@@ -682,7 +718,6 @@ function BookPage() {
                     onSelectPickup={handlePickupSelect}
                     selectedPickup={pickupDatetime}
                     durationHours={durationHours}
-                    onMonthChange={fetchRangeAround}
                   />
                 )}
 
@@ -693,7 +728,7 @@ function BookPage() {
                     className="rounded-xl p-4 mt-4 space-y-2 text-sm"
                     style={selectionConflict
                       ? { background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }
-                      : { background: 'rgba(214,51,132,0.06)', border: '1px solid rgba(214,51,132,0.18)' }
+                      : { background: 'rgba(140,43,63,0.06)', border: '1px solid rgba(140,43,63,0.18)' }
                     }
                   >
                     {selectionConflict && (
@@ -738,7 +773,10 @@ function BookPage() {
                 )}
 
                 {errors.pickup && !selectionConflict && (
-                  <p className="text-pink text-sm mt-2">{errors.pickup}</p>
+                  <p className="text-pink text-sm mt-2 flex items-center gap-1.5">
+                    {errors.pickup === QUEUE_LOADING_MSG && <Loader size={14} className="animate-spin" />}
+                    {errors.pickup}
+                  </p>
                 )}
               </div>
             )}
@@ -746,7 +784,23 @@ function BookPage() {
             {/* Step 3: Pickup/return method (local) or shipping address (provincial) */}
             {step === STEP_ADDRESS && !isProvincial && (
               <div>
-                <h1 className="text-2xl font-bold mb-6">รูปแบบรับ-คืน</h1>
+                <h1 className="text-2xl font-bold mb-4">รูปแบบรับ-คืน</h1>
+
+                <a
+                  href={SHOP_MAP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 glass rounded-xl px-4 py-3 mb-6 hover:border-pink-200 transition-all"
+                >
+                  <span className="w-9 h-9 rounded-lg bg-pink-50 flex items-center justify-center shrink-0">
+                    <MapPin size={18} className="text-pink" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium">หอพักเมธาเรสสิเดนท์ 3</span>
+                    <span className="block text-xs text-gray-400">จุดรับ-คืนเอง · ซอยวุ่นวาย มมส.</span>
+                  </span>
+                  <span className="text-pink text-xs font-semibold shrink-0 whitespace-nowrap">แผนที่ →</span>
+                </a>
 
                 <Section title="รับเครื่อง">
                   <OptionCard
@@ -758,8 +812,13 @@ function BookPage() {
                   <OptionCard
                     selected={pickupType === 'delivery'}
                     onClick={() => setPickupType('delivery')}
-                    title="Delivery +20฿"
-                    sub="เฉพาะมมส ม.ใหม่"
+                    title={`Delivery +${LOCAL_DELIVERY_FEE}฿`}
+                    sub={
+                      pickupDeliveryOk
+                        ? `เฉพาะมมส ม.ใหม่ · ${DELIVERY_HOURS_LABEL} น.`
+                        : `ไม่มี Delivery เวลา ${pickupDatetime && format(pickupDatetime, 'HH:mm')} น. (ส่งได้ ${DELIVERY_HOURS_LABEL} น.)`
+                    }
+                    disabled={!pickupDeliveryOk}
                   />
                   {pickupType === 'delivery' && (
                     <input
@@ -782,8 +841,13 @@ function BookPage() {
                   <OptionCard
                     selected={returnType === 'delivery'}
                     onClick={() => setReturnType('delivery')}
-                    title="ให้ร้านรับ +20฿"
-                    sub="เฉพาะมมส. ม.ใหม่"
+                    title={`ให้ร้านรับ +${LOCAL_DELIVERY_FEE}฿`}
+                    sub={
+                      returnDeliveryOk
+                        ? `เฉพาะมมส. ม.ใหม่ · ${DELIVERY_HOURS_LABEL} น.`
+                        : `ร้านไม่รับคืนเวลา ${returnDatetime && format(returnDatetime, 'HH:mm')} น. (รับได้ ${DELIVERY_HOURS_LABEL} น.)`
+                    }
+                    disabled={!returnDeliveryOk}
                   />
                   {returnType === 'delivery' && (
                     <div className="ml-4 pl-3 border-l-2 border-pink-100 space-y-1.5">
@@ -939,7 +1003,7 @@ function BookPage() {
                   </div>
                 )}
 
-                <div className="space-y-4">
+                <div className={`space-y-4 ${isProvincial ? '' : 'mt-4'}`}>
                   {isProvincial && <p className="text-sm font-semibold text-gray-600">หลักฐานยืนยันตัวตน</p>}
                   <div>
                     <p className="text-sm text-gray-500 mb-2">บัตรประชาชน * <span className="text-gray-400">(สามารถปิดเลขบัตรได้)</span></p>
@@ -1194,12 +1258,13 @@ function Section({ title, children, className = '' }: { title: string; children:
   )
 }
 
-function OptionCard({ selected, onClick, title, sub }: { selected: boolean; onClick: () => void; title: string; sub?: string }) {
+function OptionCard({ selected, onClick, title, sub, disabled }: { selected: boolean; onClick: () => void; title: string; sub?: string; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={`w-full glass rounded-xl p-4 flex items-center justify-between text-left transition-all ${
-        selected ? 'border-pink shadow-pink-glow-sm' : 'hover:border-pink-200'
+        selected ? 'border-pink shadow-pink-glow-sm' : disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-pink-200'
       }`}
     >
       <div>

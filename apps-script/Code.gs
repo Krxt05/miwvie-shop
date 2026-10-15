@@ -58,6 +58,17 @@ const CAMERA_GROUP = {
 }
 const PROVINCIAL_SHIPPING_FEE = 50
 const LOCAL_DELIVERY_FEE = 20
+// Delivery (drop-off/collection) runs 10:00–22:00 Bangkok time only; self
+// pickup/return has no limit. Must match src/lib/cameras.ts.
+const DELIVERY_FIRST_HOUR = 10
+const DELIVERY_LAST_HOUR = 22
+
+function isDeliveryTimeServer(d) {
+  const h = Number(Utilities.formatDate(d, 'Asia/Bangkok', 'H'))
+  const m = Number(Utilities.formatDate(d, 'Asia/Bangkok', 'm'))
+  if (h === DELIVERY_LAST_HOUR) return m === 0
+  return h >= DELIVERY_FIRST_HOUR && h < DELIVERY_LAST_HOUR
+}
 const REVIEW_DISCOUNT_RATE = 0.1
 
 // Input ceilings. A booking longer than two months or an image bigger than this
@@ -221,6 +232,17 @@ function validateBookingInput(data) {
     if ((ret.getTime() - pickup.getTime()) / 3600000 > MAX_DURATION_HOURS) {
       errors.push('ระยะเวลาเช่ายาวเกินที่ระบบรองรับ')
     }
+    // The browser enforces this too, but an old tab or a direct POST must not
+    // be able to book (and be charged for) a delivery the shop can't make.
+    if (area === 'local') {
+      const hours = DELIVERY_FIRST_HOUR + ':00–' + DELIVERY_LAST_HOUR + ':00 น.'
+      if (data.pickupType === 'delivery' && !isDeliveryTimeServer(pickup)) {
+        errors.push('Delivery ส่งได้เฉพาะ ' + hours)
+      }
+      if (data.returnType === 'delivery' && !isDeliveryTimeServer(ret)) {
+        errors.push('ให้ร้านรับคืนได้เฉพาะ ' + hours)
+      }
+    }
   }
 
   const name = String(data.customerName == null ? '' : data.customerName).trim()
@@ -311,7 +333,7 @@ function json(data) {
 function handleGet(p) {
   switch (p.action) {
     case 'setup':              return setupSheets()
-    case 'getAvailability':    return getAvailability(p.camera, p.month)
+    case 'getAvailability':    return getAvailability(p.camera, p.month, p.from)
     case 'getAllAvailability':  return getAllAvailability(p.month)
     case 'getBooking':         return getBookingById(p.id, p.token)
     case 'validateDiscountCode': return validateDiscountCode(p.code)
@@ -520,8 +542,14 @@ function slotsForCamera(cameraId, bookingSlots, blockedSlots) {
     )
 }
 
-function getAvailability(cameraId, month) {
-  const slots = slotsForCamera(cameraId, readBookingSlotsAll(month), readBlockedSlotsAll())
+// `from` (ISO) drops slots that ended before it — the booking page only needs
+// what can still clash with a new booking, not the shop's whole history.
+function getAvailability(cameraId, month, from) {
+  let slots = slotsForCamera(cameraId, readBookingSlotsAll(month), readBlockedSlotsAll())
+  const fromDate = from ? new Date(from) : null
+  if (fromDate && !isNaN(fromDate.getTime())) {
+    slots = slots.filter((s) => new Date(s.returnDatetime) > fromDate)
+  }
   return { slots }
 }
 

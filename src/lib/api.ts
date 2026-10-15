@@ -130,16 +130,18 @@ function newRequestKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
+// Without a month the backend returns every month for the camera in one read.
+// That's one Apps Script execution instead of one per month, and Apps Script
+// calls are the slow part (2-10s each), so fewer is much faster. `from` drops
+// slots that ended before it, so the reply stays small as bookings pile up.
 export async function getAvailability(
   cameraId: CameraId,
-  year: number,
-  month: number,
+  opts: { year?: number; month?: number; from?: Date } = {},
 ): Promise<BookedSlot[]> {
-  const data = await readWithRetry({
-    action: 'getAvailability',
-    camera: cameraId,
-    month: `${year}-${String(month).padStart(2, '0')}`,
-  })
+  const params: Record<string, string> = { action: 'getAvailability', camera: cameraId }
+  if (opts.year && opts.month) params.month = `${opts.year}-${String(opts.month).padStart(2, '0')}`
+  if (opts.from) params.from = opts.from.toISOString()
+  const data = await readWithRetry(params)
   return data.slots ?? []
 }
 

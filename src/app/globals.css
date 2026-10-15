@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  --pink: #d63384;
-  --pink-light: #ff69b4;
-  --gold: #c2185b;
-  --gold-light: #d63384;
-  --bg: #fff0f5;
+  --pink: #8C2B3F;
+  --pink-light: #A8475A;
+  --gold: #6E1F31;
+  --gold-light: #8C2B3F;
+  --bg: #FBF6F2;
 }
 
 * {
@@ -16,8 +16,8 @@
 }
 
 body {
-  background: linear-gradient(180deg, #fff0f5 0%, #f8c8dc 100%);
-  color: #4a2c3a;
+  background: linear-gradient(180deg, #FBF6F2 0%, #EFE4DE 100%);
+  color: #2B1D1F;
   font-family: var(--font-noto), sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -29,28 +29,28 @@ body {
 }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(214, 51, 132, 0.3);
+  background: rgba(140, 43, 63, 0.3);
   border-radius: 2px;
 }
 
 @layer utilities {
   .glass {
     background: #ffffff;
-    border: 1px solid rgba(214, 51, 132, 0.12);
-    box-shadow: 0 4px 16px rgba(214, 51, 132, 0.08);
+    border: 1px solid rgba(140, 43, 63, 0.12);
+    box-shadow: 0 4px 16px rgba(140, 43, 63, 0.08);
   }
   .glass-pink {
-    background: #fff0f5;
-    border: 1px solid rgba(214, 51, 132, 0.18);
+    background: #FBF6F2;
+    border: 1px solid rgba(140, 43, 63, 0.18);
   }
   .text-gradient {
-    background: linear-gradient(135deg, #d63384, #ff69b4);
+    background: linear-gradient(135deg, #8C2B3F, #A8475A);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .text-gradient-gold {
-    background: linear-gradient(135deg, #c2185b, #d63384, #ff1493);
+    background: linear-gradient(135deg, #6E1F31, #8C2B3F, #9E3A4E);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -70,9 +70,9 @@ body {
     cursor: not-allowed;
   }
   .slot-selected {
-    background: rgba(214, 51, 132, 0.15);
-    border-color: #d63384;
-    box-shadow: 0 0 0 1px rgba(214, 51, 132, 0.3);
+    background: rgba(140, 43, 63, 0.15);
+    border-color: #8C2B3F;
+    box-shadow: 0 0 0 1px rgba(140, 43, 63, 0.3);
   }
   .slot-past {
     background: rgba(0, 0, 0, 0.03);

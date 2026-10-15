@@ -1,0 +1,4 @@
+# Full-size photo originals — never upload these with a CLI deploy
+public/mood/new/
+public/cameras/ภาพล่าสุด/
+public/cameras/ixy 30s black.jpeg

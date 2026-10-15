@@ -6,7 +6,7 @@ import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, Clock, CheckCircle, Package, RotateCcw, XCircle, RefreshCw } from 'lucide-react'
 import { getBooking, ApiError } from '@/lib/api'
-import { PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
+import { PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL } from '@/lib/cameras'
 import { Booking } from '@/types'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -202,6 +202,16 @@ function BookingStatusInner() {
                         : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
                     }
                   />
+                  {(booking.pickupType === 'self' || booking.returnType === 'self') && (
+                    <a
+                      href={SHOP_MAP_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-right text-xs text-pink font-semibold hover:underline"
+                    >
+                      📍 แผนที่จุดรับ-คืน หอพักเมธาเรสสิเดนท์ 3 →
+                    </a>
+                  )}
                 </>
               )}
 

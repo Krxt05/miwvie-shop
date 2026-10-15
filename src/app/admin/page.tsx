@@ -252,7 +252,7 @@ export default function AdminPage() {
           className="glass-pink rounded-2xl p-8 w-full max-w-sm"
         >
           <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(214,51,132,0.2)' }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(140,43,63,0.2)' }}>
               <Lock size={22} className="text-gold" />
             </div>
             <h1 className="text-xl font-bold">Admin</h1>
@@ -621,7 +621,7 @@ export default function AdminPage() {
 
                         {/* Discount info */}
                         {(Number(b.discountAmount) > 0 || b.discountCode) && (
-                          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'rgba(214,51,132,0.1)', border: '1px solid rgba(214,51,132,0.2)' }}>
+                          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'rgba(140,43,63,0.1)', border: '1px solid rgba(140,43,63,0.2)' }}>
                             <span className="text-gold">โค้ดส่วนลด: </span>
                             <span className="font-mono font-bold text-gold">{String(b.discountCode)}</span>
                             <span className="text-gray-400"> (ลด {Number(b.discountAmount).toLocaleString()} ฿)</span>
@@ -699,7 +699,7 @@ export default function AdminPage() {
                               <div className="flex items-center gap-2">
                                 <div
                                   className="flex-1 rounded-lg px-3 py-2 text-center font-mono font-bold text-base tracking-widest"
-                                  style={{ background: 'rgba(214,51,132,0.1)', border: '1px solid rgba(214,51,132,0.3)', color: '#C2185B' }}
+                                  style={{ background: 'rgba(140,43,63,0.1)', border: '1px solid rgba(140,43,63,0.3)', color: '#6E1F31' }}
                                 >
                                   {existingCode}
                                 </div>

@@ -54,7 +54,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       >
         {/* Header — logo + title */}
         <div className="flex flex-col items-center pt-5 pb-4 px-6 border-b border-dashed border-pink-200">
-          <div className="p-[3px] rounded-full mb-2 drop-shadow-lg" style={{ background: 'linear-gradient(135deg, #D63384, #FF69B4, #FFB6C1, #D63384)' }}>
+          <div className="p-[3px] rounded-full mb-2 drop-shadow-lg" style={{ background: 'linear-gradient(135deg, #8C2B3F, #A8475A, #D9B3B7, #8C2B3F)' }}>
             <Image
               src="/logo.png"
               alt="MIWVIE SHOP"
@@ -157,7 +157,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       {/* Action buttons */}
       <div className="flex flex-col gap-3 mt-4">
         {/* Screenshot instruction */}
-        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(214,51,132,0.06)', border: '1px solid rgba(214,51,132,0.2)' }}>
+        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(140,43,63,0.06)', border: '1px solid rgba(140,43,63,0.2)' }}>
           <Camera size={20} className="text-gold shrink-0 mt-0.5" />
           <div>
             <p className="text-gold font-semibold text-sm mb-0.5">แคปหน้าจอใบจองนี้</p>

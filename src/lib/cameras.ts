@@ -24,6 +24,7 @@ export const CAMERAS: Camera[] = [
     priceGroup: 'A',
     color: '#374151',
     quantity: 1,
+    colorways: [{ name: 'ดำ', hex: '#1f1f1f' }],
   },
   {
     id: 'IXY30s',
@@ -34,6 +35,7 @@ export const CAMERAS: Camera[] = [
     priceGroup: 'A',
     color: '#6b7280',
     quantity: 2,
+    colorways: [{ name: 'ดำ', hex: '#1f1f1f' }, { name: 'เงิน', hex: '#c8c8c8' }],
   },
   {
     id: 'IXY930IS',
@@ -44,6 +46,7 @@ export const CAMERAS: Camera[] = [
     priceGroup: 'A',
     color: '#b45309',
     quantity: 2,
+    colorways: [{ name: 'ฟ้า', hex: '#9fd3df' }, { name: 'แชมเปญ', hex: '#c9a45c' }],
   },
   {
     id: 'IXY510IS',
@@ -54,6 +57,7 @@ export const CAMERAS: Camera[] = [
     priceGroup: 'A',
     color: '#a8a29e',
     quantity: 1,
+    colorways: [{ name: 'เงิน', hex: '#c8c8c8' }],
   },
   {
     id: 'IXY200',
@@ -64,6 +68,7 @@ export const CAMERAS: Camera[] = [
     priceGroup: 'B',
     color: '#dc2626',
     quantity: 1,
+    colorways: [{ name: 'แดง', hex: '#b3122a' }],
   },
 ]
 
@@ -85,9 +90,12 @@ export function calcPrice(priceGroup: PriceGroup, durationHours: number): number
   return t.day7 + (days - 7) * EXTRA_DAY_RATE[priceGroup]
 }
 
+// Per leg, within the MSU area. Must match LOCAL_DELIVERY_FEE in apps-script/Code.gs
+export const LOCAL_DELIVERY_FEE = 20
+
 export function calcDeliveryFee(pickupType: string, returnType: string): number {
-  const pickup = pickupType === 'delivery' ? 20 : 0
-  const ret = returnType === 'delivery' ? 20 : 0
+  const pickup = pickupType === 'delivery' ? LOCAL_DELIVERY_FEE : 0
+  const ret = returnType === 'delivery' ? LOCAL_DELIVERY_FEE : 0
   return pickup + ret
 }
 
@@ -124,10 +132,37 @@ export function hasCapacityConflict(
   return false
 }
 
+// The shop only runs delivery (drop-off and collection) between 10:00 and
+// 22:00 — nothing from 23:00 to 10:00. Self pickup/return isn't restricted.
+// Must match DELIVERY_FIRST_HOUR/DELIVERY_LAST_HOUR in apps-script/Code.gs.
+export const DELIVERY_FIRST_HOUR = 10
+export const DELIVERY_LAST_HOUR = 22
+export const DELIVERY_HOURS_LABEL = `${String(DELIVERY_FIRST_HOUR).padStart(2, '0')}:00–${DELIVERY_LAST_HOUR}:00`
+
+// 22:00 itself is the last slot; 22:30 is already past it
+export function isDeliveryTime(dt: Date): boolean {
+  const h = dt.getHours()
+  if (h === DELIVERY_LAST_HOUR) return dt.getMinutes() === 0
+  return h >= DELIVERY_FIRST_HOUR && h < DELIVERY_LAST_HOUR
+}
+
+// What comes in the bag with every rental
+export const INCLUDED_ACCESSORIES = [
+  'แบตเตอรี่ 2 ก้อน',
+  'ที่ชาร์จแบต',
+  'กระเป๋ากล้อง',
+  'SD Card',
+  'การ์ดรีดเดอร์',
+  'กระเป๋าใส่อุปกรณ์',
+]
+
 export const DELIVERY_LOCATION = 'หอพักเมธาเรสสิเดนท์ 3'
+// Where self pickup/return happens (the dorm above)
+export const SHOP_MAP_URL = 'https://maps.app.goo.gl/pHcoGaLEbY3njikQ9'
 export const PROMPTPAY_NUMBER = '0981016683'
 
-// Provincial (ต่างจังหวัด) rentals: flat shipping fee covering both legs, and a
+// Provincial (ต่างจังหวัด) rentals: shipping fee for the outbound leg only (the customer
+// pays for the return leg themselves), and a
 // 3-day minimum since the unit needs to ship out and back either way.
 export const PROVINCIAL_SHIPPING_FEE = 50
 export const MIN_PROVINCIAL_DURATION_HOURS = 72

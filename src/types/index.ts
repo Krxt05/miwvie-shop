@@ -25,6 +25,7 @@ export interface Camera {
   priceGroup: PriceGroup
   color: string
   quantity: number
+  colorways: { name: string; hex: string }[]
 }
 
 export interface BookedSlot {
