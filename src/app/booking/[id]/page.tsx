@@ -10,6 +10,7 @@ import { PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL } from '@/lib/cameras'
 import { Booking } from '@/types'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
+import ReceiptCard from '@/components/ReceiptCard'
 
 const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string; sub: string }> = {
   pending: {
@@ -137,107 +138,117 @@ function BookingStatusInner() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4"
           >
-            {/* Status card */}
-            <div className="glass-pink rounded-2xl p-6 text-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-current/10`}>
-                <StatusIcon size={32} className={status.color} />
+            {/* Status card — an unpaid booking gets the same header as the
+                booking-success screen instead, so the slip looks identical */}
+            {booking.bookingStatus === 'pending' ? (
+              <div className="text-center">
+                <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <span className="text-emerald-500 text-2xl">✓</span>
+                </div>
+                <h1 className="text-2xl font-bold mb-1">จองสำเร็จ!</h1>
+                <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
               </div>
-              <Badge label={status.label} variant={booking.bookingStatus as any} />
-              <p className="text-gray-500 text-sm mt-2">{status.sub}</p>
-            </div>
-
-            {/* Booking details */}
-            <div className="glass rounded-2xl p-5 space-y-3">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="font-bold">รายละเอียดการจอง</h2>
-                <span className="text-xs text-gray-400 font-mono">{booking.bookingId}</span>
+            ) : (
+              <div className="glass-pink rounded-2xl p-6 text-center">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-current/10`}>
+                  <StatusIcon size={32} className={status.color} />
+                </div>
+                <Badge label={status.label} variant={booking.bookingStatus as any} />
+                <p className="text-gray-500 text-sm mt-2">{status.sub}</p>
               </div>
+            )}
 
-              <Row label="กล้อง" value={String(booking.cameraId)} />
-              <Row label="พื้นที่" value={booking.rentalArea === 'provincial' ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
-              {booking.rentalArea === 'provincial' && booking.pickupDatetime && (
-                <Row
-                  label="ร้านส่งพัสดุ"
-                  value={format(addDays(new Date(booking.pickupDatetime), -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })}
-                />
-              )}
-              <Row
-                label={booking.rentalArea === 'provincial' ? 'พัสดุถึงมือ' : 'รับกล้อง'}
-                value={
-                  booking.pickupDatetime
-                    ? format(new Date(booking.pickupDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? '' : ' น.')
-                    : '-'
-                }
+            {/* Unpaid: show the same slip the customer got right after booking —
+                QR and account number included — so the payment details never
+                vanish once they leave that screen. */}
+            {booking.bookingStatus === 'pending' ? (
+              <ReceiptCard
+                bookingId={booking.bookingId}
+                totalAmount={Number(booking.totalAmount)}
+                form={{
+                  ...booking,
+                  pickupDatetime: new Date(String(booking.pickupDatetime)),
+                  returnDatetime: new Date(String(booking.returnDatetime)),
+                  customerName: booking.customerName ?? '',
+                }}
               />
-              <Row
-                label={booking.rentalArea === 'provincial' ? 'ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)' : 'คืนกล้อง'}
-                value={
-                  booking.returnDatetime
-                    ? format(new Date(booking.returnDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? ' ก่อน 12:00 น.' : ' น.')
-                    : '-'
-                }
-              />
-              {booking.rentalArea === 'provincial' ? (
-                <>
-                  <Row
-                    label="ที่อยู่จัดส่ง"
-                    value={`${booking.shippingAddress} ต.${booking.shippingSubdistrict} อ./เขต ${booking.shippingDistrict} จ.${booking.shippingProvince} ${booking.shippingPostalCode}`}
-                  />
-                  <Row
-                    label="แจ้งเลขพัสดุภายใน"
-                    value={booking.returnDatetime ? `เที่ยงวันที่ ${format(addDays(new Date(booking.returnDatetime), 1), 'd MMM yyyy', { locale: th })}` : '-'}
-                  />
-                </>
-              ) : (
-                <>
-                  <Row
-                    label="รับเครื่อง"
-                    value={booking.pickupType === 'self' ? 'รับเอง (ฟรี)' : `Delivery → ${booking.pickupAddress}`}
-                  />
-                  <Row
-                    label="คืนเครื่อง"
-                    value={
-                      booking.returnType === 'self'
-                        ? 'คืนเอง (ฟรี)'
-                        : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
-                    }
-                  />
-                  {(booking.pickupType === 'self' || booking.returnType === 'self') && (
-                    <a
-                      href={SHOP_MAP_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block text-right text-xs text-pink font-semibold hover:underline"
-                    >
-                      📍 แผนที่จุดรับ-คืน หอพักเมธาเรสสิเดนท์ 3 →
-                    </a>
-                  )}
-                </>
-              )}
-
-              <div className="border-t border-pink-100 pt-3 flex justify-between font-bold text-pink">
-                <span>ยอดชำระ</span>
-                <span>{Number(booking.totalAmount).toLocaleString()} ฿</span>
-              </div>
-            </div>
-
-            {/* Payment reminder if pending */}
-            {booking.bookingStatus === 'pending' && (
+            ) : (
+              <>
+              {/* Booking details */}
               <div className="glass rounded-2xl p-5 space-y-3">
-                <h3 className="font-semibold text-amber-600 flex items-center gap-2">
-                  <Clock size={16} /> รอการชำระเงิน
-                </h3>
-                <p className="text-gray-500 text-sm">
-                  โอนเงิน <strong className="text-gray-800">{Number(booking.totalAmount).toLocaleString()} บาท</strong> ผ่าน PromptPay แล้วส่งสลิปมาที่ IG DM
-                </p>
-                <Button
-                  onClick={() => window.open('https://www.instagram.com/miwvie_shop/', '_blank')}
-                  variant="outline"
-                  fullWidth
-                >
-                  ส่งสลิปที่ @miwvie_shop
-                </Button>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="font-bold">รายละเอียดการจอง</h2>
+                  <span className="text-xs text-gray-400 font-mono">{booking.bookingId}</span>
+                </div>
+
+                <Row label="กล้อง" value={String(booking.cameraId)} />
+                <Row label="พื้นที่" value={booking.rentalArea === 'provincial' ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
+                {booking.rentalArea === 'provincial' && booking.pickupDatetime && (
+                  <Row
+                    label="ร้านส่งพัสดุ"
+                    value={format(addDays(new Date(booking.pickupDatetime), -PROVINCIAL_SHIP_LEAD_DAYS), 'd MMM yyyy', { locale: th })}
+                  />
+                )}
+                <Row
+                  label={booking.rentalArea === 'provincial' ? 'พัสดุถึงมือ' : 'รับกล้อง'}
+                  value={
+                    booking.pickupDatetime
+                      ? format(new Date(booking.pickupDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? '' : ' น.')
+                      : '-'
+                  }
+                />
+                <Row
+                  label={booking.rentalArea === 'provincial' ? 'ส่งคืน (ไปรษณีย์/ขนส่งเอกชน)' : 'คืนกล้อง'}
+                  value={
+                    booking.returnDatetime
+                      ? format(new Date(booking.returnDatetime), booking.rentalArea === 'provincial' ? 'd MMM yyyy' : 'd MMM yyyy HH:mm', { locale: th }) + (booking.rentalArea === 'provincial' ? ' ก่อน 12:00 น.' : ' น.')
+                      : '-'
+                  }
+                />
+                {booking.rentalArea === 'provincial' ? (
+                  <>
+                    <Row
+                      label="ที่อยู่จัดส่ง"
+                      value={`${booking.shippingAddress} ต.${booking.shippingSubdistrict} อ./เขต ${booking.shippingDistrict} จ.${booking.shippingProvince} ${booking.shippingPostalCode}`}
+                    />
+                    <Row
+                      label="แจ้งเลขพัสดุภายใน"
+                      value={booking.returnDatetime ? `เที่ยงวันที่ ${format(addDays(new Date(booking.returnDatetime), 1), 'd MMM yyyy', { locale: th })}` : '-'}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Row
+                      label="รับเครื่อง"
+                      value={booking.pickupType === 'self' ? 'รับเอง (ฟรี)' : `Delivery → ${booking.pickupAddress}`}
+                    />
+                    <Row
+                      label="คืนเครื่อง"
+                      value={
+                        booking.returnType === 'self'
+                          ? 'คืนเอง (ฟรี)'
+                          : `ให้ร้านรับ${booking.returnAddress ? ` → ${booking.returnAddress}` : ''}`
+                      }
+                    />
+                    {(booking.pickupType === 'self' || booking.returnType === 'self') && (
+                      <a
+                        href={SHOP_MAP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-right text-xs text-pink font-semibold hover:underline"
+                      >
+                        📍 แผนที่จุดรับ-คืน หอพักเมธาเรสสิเดนท์ 3 →
+                      </a>
+                    )}
+                  </>
+                )}
+
+                <div className="border-t border-pink-100 pt-3 flex justify-between font-bold text-pink">
+                  <span>ยอดชำระ</span>
+                  <span>{Number(booking.totalAmount).toLocaleString()} ฿</span>
+                </div>
               </div>
+              </>
             )}
 
             {/* Refresh */}

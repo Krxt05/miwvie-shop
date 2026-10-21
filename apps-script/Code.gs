@@ -190,11 +190,11 @@ function generateAccessToken() {
   return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 40)
 }
 
-// Everything the customer's own receipt page needs, and nothing more. Contact
-// details, document links, admin notes and coupon codes are admin-only and are
-// absent from both customer lists on purpose.
+// Everything the customer's own receipt page needs, and nothing more. The name
+// is on the re-shown slip (token holders only — never the public list). Phone,
+// IG, document links, admin notes and coupon codes stay admin-only on purpose.
 const CUSTOMER_BOOKING_FIELDS = [
-  'booking_id', 'created_at', 'camera_id', 'camera_name',
+  'booking_id', 'created_at', 'camera_id', 'camera_name', 'customer_name',
   'pickup_datetime', 'return_datetime', 'duration_hours',
   'price', 'delivery_fee', 'total_amount', 'discount_amount',
   'pickup_type', 'pickup_address', 'return_type', 'return_address',

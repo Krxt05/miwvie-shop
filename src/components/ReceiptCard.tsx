@@ -1,44 +1,51 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ExternalLink, Camera } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
 interface Props {
   bookingId: string
   form: BookingFormData
+  // The saved booking's amount, when re-showing the slip from the status page.
+  // The server priced it, so it wins over recalculating from today's table.
+  totalAmount?: number
+  // Hide the screenshot / IG buttons when the host page has its own.
+  showActions?: boolean
 }
 
-export default function ReceiptCard({ bookingId, form }: Props) {
+export default function ReceiptCard({ bookingId, form, totalAmount, showActions = true }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const receiptRef = useRef<HTMLDivElement>(null)
 
   const isProvincial = form.rentalArea === 'provincial'
-  const camera = CAMERAS.find((c) => c.id === form.cameraId)!
-  const basePrice = calcPrice(camera.priceGroup, form.durationHours)
+  const camera = CAMERAS.find((c) => c.id === form.cameraId)
+  const basePrice = camera ? calcPrice(camera.priceGroup, form.durationHours) : 0
   const discountAmount = form.discountAmount ?? 0
   const price = basePrice - discountAmount
   const deliveryFee = isProvincial ? PROVINCIAL_SHIPPING_FEE : calcDeliveryFee(form.pickupType, form.returnType)
-  const total = price + deliveryFee
+  const total = totalAmount ?? price + deliveryFee
   const dateFmt = isProvincial ? 'd MMM yy' : 'd MMM yy HH:mm'
 
+  // qrcode is imported statically: the lazy chunk it used to come from could
+  // fail to load (a tab left open across a deploy), and the slip then showed
+  // no QR and no account number at all.
   useEffect(() => {
-    async function genQR() {
-      const QRCode = (await import('qrcode')).default
-      const payload = generatePromptPayPayload(PROMPTPAY_NUMBER, total)
-      const url = await QRCode.toDataURL(payload, {
-        width: 160,
-        margin: 1,
-        color: { dark: '#1a0818', light: '#ffffff' },
-      })
-      setQrDataUrl(url)
-    }
-    genQR()
+    let cancelled = false
+    QRCode.toDataURL(generatePromptPayPayload(PROMPTPAY_NUMBER, total), {
+      width: 160,
+      margin: 1,
+      color: { dark: '#1a0818', light: '#ffffff' },
+    })
+      .then((url) => { if (!cancelled) setQrDataUrl(url) })
+      .catch(() => { /* the number below still lets them pay */ })
+    return () => { cancelled = true }
   }, [total])
 
   function openIGDM() {
@@ -71,7 +78,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
         {/* Booking details */}
         <div className="px-6 py-4 space-y-2 text-sm border-b border-dashed border-pink-200">
           <Row label="พื้นที่" value={isProvincial ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
-          <Row label="กล้อง" value={camera.name} highlight />
+          <Row label="กล้อง" value={camera?.name ?? String(form.cameraId)} highlight />
           {isProvincial && (
             <Row
               label="ร้านส่งพัสดุ"
@@ -110,7 +117,17 @@ export default function ReceiptCard({ bookingId, form }: Props) {
               )
             })()
           )}
-          <Row label="ชื่อ" value={form.customerName} />
+          {form.customerName && <Row label="ชื่อ" value={form.customerName} />}
+          {!isProvincial && (form.pickupType === 'self' || form.returnType === 'self') && (
+            <a
+              href={SHOP_MAP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-right text-xs text-pink font-semibold hover:underline pt-1"
+            >
+              📍 แผนที่จุดรับ-คืน หอพักเมธาเรสสิเดนท์ 3 →
+            </a>
+          )}
         </div>
 
         {/* Amount */}
@@ -119,7 +136,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
             <Row label="ค่าเช่า" value={`${basePrice.toLocaleString()} ฿`} />
           )}
           {discountAmount > 0 && (
-            <Row label={`ส่วนลด 10% (${form.discountCode})`} value={`-${discountAmount.toLocaleString()} ฿`} highlight accent="emerald" />
+            <Row label={form.discountCode ? `ส่วนลด 10% (${form.discountCode})` : 'ส่วนลด 10%'} value={`-${discountAmount.toLocaleString()} ฿`} highlight accent="emerald" />
           )}
           {deliveryFee > 0 && (
             <Row label={isProvincial ? 'ค่าส่ง (ขาไป)' : 'ค่าจัดส่ง'} value={`+${deliveryFee} ฿`} />
@@ -130,21 +147,23 @@ export default function ReceiptCard({ bookingId, form }: Props) {
           </div>
         </div>
 
-        {/* QR Code — compact horizontal layout */}
-        {qrDataUrl && (
-          <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-pink-200">
-            <div className="bg-white rounded-xl p-2 shrink-0 border border-pink-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* QR Code — compact horizontal layout; the number shows even before the QR */}
+        <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-pink-200">
+          <div className="bg-white rounded-xl p-2 shrink-0 border border-pink-100">
+            {qrDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={qrDataUrl} alt="PromptPay QR" className="w-24 h-24" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-gray-500 text-[11px]">สแกนจ่ายผ่าน</p>
-              <p className="text-gray-800 font-bold text-sm">PromptPay</p>
-              <p className="text-pink text-sm font-semibold">{PROMPTPAY_NUMBER}</p>
-              <p className="text-gray-400 text-[10px]">ยอด {total.toLocaleString()} บาท</p>
-            </div>
+            ) : (
+              <div className="w-24 h-24" />
+            )}
           </div>
-        )}
+          <div className="space-y-1">
+            <p className="text-gray-500 text-[11px]">สแกนจ่ายผ่าน</p>
+            <p className="text-gray-800 font-bold text-sm">PromptPay</p>
+            <p className="text-pink text-sm font-semibold">{PROMPTPAY_NUMBER}</p>
+            <p className="text-gray-400 text-[10px]">ยอด {total.toLocaleString()} บาท</p>
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="px-6 py-3 text-center">
@@ -155,6 +174,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
       </div>
 
       {/* Action buttons */}
+      {showActions && (
       <div className="flex flex-col gap-3 mt-4">
         {/* Screenshot instruction */}
         <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(140,43,63,0.06)', border: '1px solid rgba(140,43,63,0.2)' }}>
@@ -169,6 +189,7 @@ export default function ReceiptCard({ bookingId, form }: Props) {
           ส่งสลิปทาง IG @miwvie_shop
         </Button>
       </div>
+      )}
     </div>
   )
 }
