@@ -351,6 +351,7 @@ function handlePost(body) {
     case 'attachImages':         return attachImages(body.bookingId, body.idCardImage, body.igProfileImage, body.token)
     case 'getAdminBookings':     return getAdminBookings(body.pin)
     case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
+    case 'updateAdminNotes':     return updateAdminNotes(body.bookingId, body.notes, body.pin)
     case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
     case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity)
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
@@ -1267,6 +1268,32 @@ function updateBookingStatus(bookingId, status, pin) {
     const booking = {}
     h.forEach(function (name, j) { if (name) booking[name] = saved[j] })
     return { success: true, booking: booking }
+  }
+
+  return { error: 'Booking not found' }
+}
+
+// Free-text note the shop keeps per booking (e.g. "กล้องมีรอยตอนรับคืน").
+// Writes only the admin_notes cell so it can never clobber a status change
+// made at the same moment from another phone.
+function updateAdminNotes(bookingId, notes, pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  if (!sheet) return { error: 'Sheet not found' }
+
+  const text = String(notes == null ? '' : notes).slice(0, 2000)
+  const data = sheet.getDataRange().getValues()
+  const h = data[0]
+  const iId = h.indexOf('booking_id')
+  const iNotes = h.indexOf('admin_notes')
+  if (iNotes < 0) return { error: 'admin_notes column not found' }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== String(bookingId)) continue
+    sheet.getRange(i + 1, iNotes + 1).setValue(text)
+    return { success: true, notes: text }
   }
 
   return { error: 'Booking not found' }

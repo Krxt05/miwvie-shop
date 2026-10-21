@@ -24,6 +24,7 @@ const POST_ACTIONS = new Set([
   // admin flow (each one checks the PIN inside Apps Script)
   'getAdminBookings',
   'updateBookingStatus',
+  'updateAdminNotes',
   'deleteBooking',
   'blockDates',
   'listBlockedSlots',

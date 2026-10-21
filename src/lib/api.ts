@@ -271,6 +271,14 @@ export async function updateBookingStatus(
   return { ...data, booking: data.booking ? mapBooking(data.booking) : undefined }
 }
 
+export async function updateAdminNotes(
+  bookingId: string,
+  notes: string,
+  pin: string,
+): Promise<{ success?: boolean; error?: string; notes?: string }> {
+  return post({ action: 'updateAdminNotes', bookingId, notes, pin })
+}
+
 export interface BlockedSlot {
   id: string
   cameraId: CameraId | 'ALL'
