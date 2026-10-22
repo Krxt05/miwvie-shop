@@ -29,6 +29,28 @@ const DURATION_OPTIONS = [
   { hours: 168, label: '7 วัน' },
 ]
 
+// Details a returning customer would otherwise retype, kept only in their own
+// browser. Never the ID/profile photos, never anything from the server.
+const SAVED_CUSTOMER_KEY = 'miwvie_customer_v1'
+interface SavedCustomer {
+  name?: string; phone?: string; ig?: string; pickupAddress?: string
+  shippingAddress?: string; shippingSubdistrict?: string; shippingDistrict?: string
+  shippingProvince?: string; shippingPostalCode?: string
+}
+// Storage can throw (private mode, blocked site data) — the form must still work.
+function readSavedCustomer(): SavedCustomer | null {
+  try {
+    const raw = localStorage.getItem(SAVED_CUSTOMER_KEY)
+    return raw ? (JSON.parse(raw) as SavedCustomer) : null
+  } catch { return null }
+}
+function writeSavedCustomer(c: SavedCustomer | null) {
+  try {
+    if (c) localStorage.setItem(SAVED_CUSTOMER_KEY, JSON.stringify(c))
+    else localStorage.removeItem(SAVED_CUSTOMER_KEY)
+  } catch { /* not remembered — they type it next time */ }
+}
+
 function formatBookingDate(date: Date, area: RentalArea): string {
   return area === 'provincial'
     ? format(date, 'd MMM yyyy', { locale: th })
@@ -98,6 +120,42 @@ function BookPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
   const [customDays, setCustomDays] = useState(8)
+  const [prefilled, setPrefilled] = useState(false)
+
+  // Returning customer on the same device: fill in what they typed last time.
+  useEffect(() => {
+    const saved = readSavedCustomer()
+    if (!saved || !saved.name) return
+    setCustomerName(saved.name ?? '')
+    setCustomerPhone(saved.phone ?? '')
+    setCustomerIG(saved.ig ?? '')
+    // One remembered delivery address serves either leg: the pickup field, and
+    // the return field used when only the return is collected by the shop.
+    setPickupAddress(saved.pickupAddress ?? '')
+    setReturnAddress(saved.pickupAddress ?? '')
+    setShippingAddress(saved.shippingAddress ?? '')
+    setShippingSubdistrict(saved.shippingSubdistrict ?? '')
+    setShippingDistrict(saved.shippingDistrict ?? '')
+    setShippingProvince(saved.shippingProvince ?? '')
+    setShippingPostalCode(saved.shippingPostalCode ?? '')
+    setPrefilled(true)
+  }, [])
+
+  // Clears only what sits on this step. The delivery address belongs to the
+  // earlier pickup/return step, which has already been validated — wiping it
+  // from here would send a delivery booking with no address and no warning.
+  function forgetSavedCustomer() {
+    writeSavedCustomer(null)
+    setCustomerName('')
+    setCustomerPhone('')
+    setCustomerIG('')
+    setShippingAddress('')
+    setShippingSubdistrict('')
+    setShippingDistrict('')
+    setShippingProvince('')
+    setShippingPostalCode('')
+    setPrefilled(false)
+  }
 
   const camera = cameraId ? CAMERAS.find((c) => c.id === cameraId) : null
   const isProvincial = rentalArea === 'provincial'
@@ -345,7 +403,8 @@ function BookPage() {
         returnDatetime,
         durationHours,
         pickupType: isProvincial ? 'delivery' : pickupType,
-        pickupAddress: isProvincial ? '' : pickupAddress,
+        // A remembered address may sit in the field on a self-pickup booking
+        pickupAddress: isProvincial || pickupType !== 'delivery' ? '' : pickupAddress,
         returnType: isProvincial ? 'delivery' : returnType,
         returnAddress: isProvincial ? '' : effectiveReturnAddress,
         shippingAddress: isProvincial ? shippingAddress : '',
@@ -365,6 +424,27 @@ function BookPage() {
       setBookingId(id)
       setAccessToken(token)
       setStep(STEP_RECEIPT)
+
+      // Remember the typed details for next time — merged over what was saved
+      // before, so a local booking doesn't wipe a saved provincial address.
+      const prev = readSavedCustomer() ?? {}
+      writeSavedCustomer({
+        ...prev,
+        name: customerName.trim(),
+        phone: customerPhone.trim(),
+        ig: customerIG.trim(),
+        ...(isProvincial
+          ? {
+              shippingAddress: shippingAddress.trim(),
+              shippingSubdistrict: shippingSubdistrict.trim(),
+              shippingDistrict: shippingDistrict.trim(),
+              shippingProvince: shippingProvince.trim(),
+              shippingPostalCode: shippingPostalCode.trim(),
+            }
+          : pickupType === 'delivery' ? { pickupAddress: pickupAddress.trim() }
+          : returnType === 'delivery' && effectiveReturnAddress.trim() ? { pickupAddress: effectiveReturnAddress.trim() }
+          : {}),
+      })
 
       // The slot is secured; the photos can land while the customer reads the
       // receipt and scans the QR. Deliberately not awaited — nothing on screen
@@ -899,6 +979,14 @@ function BookPage() {
             {step === STEP_INFO && (
               <div>
                 <h1 className="text-2xl font-bold mb-6">{isProvincial ? 'ข้อมูลผู้เช่าและที่อยู่จัดส่ง' : 'ข้อมูลส่วนตัว'}</h1>
+                {prefilled && (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+                    <span>กรอกข้อมูลจากการจองครั้งก่อนให้แล้ว ตรวจสอบอีกครั้งนะคะ</span>
+                    <button type="button" onClick={forgetSavedCustomer} className="shrink-0 text-xs font-semibold underline underline-offset-2">
+                      ไม่ใช่ฉัน / ล้าง
+                    </button>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   {isProvincial && <p className="text-sm font-semibold text-gray-600">ข้อมูลผู้เช่า</p>}
@@ -907,6 +995,8 @@ function BookPage() {
                     value={customerName}
                     onChange={setCustomerName}
                     placeholder="ชื่อที่ตรงกับบัตรประชาชน"
+                    name="name"
+                    autoComplete="name"
                     error={errors.name}
                   />
                   <Field
@@ -915,6 +1005,9 @@ function BookPage() {
                     onChange={setCustomerPhone}
                     placeholder="08X-XXX-XXXX"
                     type="tel"
+                    name="tel"
+                    autoComplete="tel-national"
+                    inputMode="tel"
                     error={errors.phone}
                   />
                   <Field
@@ -922,6 +1015,8 @@ function BookPage() {
                     value={customerIG}
                     onChange={setCustomerIG}
                     placeholder="@username"
+                    name="social"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -931,6 +1026,8 @@ function BookPage() {
                     <div>
                       <label className="text-sm text-gray-500 block mb-1">ที่อยู่ (บ้านเลขที่ / หมู่ / ซอย / ถนน) *</label>
                       <textarea
+                        name="street-address"
+                        autoComplete="street-address"
                         value={shippingAddress}
                         onChange={(e) => setShippingAddress(e.target.value)}
                         placeholder="เช่น 123 หมู่ 4 ซอยสุขใจ ถ.มิตรภาพ"
@@ -948,6 +1045,8 @@ function BookPage() {
                         value={shippingSubdistrict}
                         onChange={setShippingSubdistrict}
                         placeholder="ตำบล/แขวง"
+                        name="address-level3"
+                        autoComplete="address-level3"
                         error={errors.shippingSubdistrict}
                       />
                       <Field
@@ -955,6 +1054,8 @@ function BookPage() {
                         value={shippingDistrict}
                         onChange={setShippingDistrict}
                         placeholder="อำเภอ/เขต"
+                        name="address-level2"
+                        autoComplete="address-level2"
                         error={errors.shippingDistrict}
                       />
                     </div>
@@ -965,6 +1066,8 @@ function BookPage() {
                         value={shippingProvince}
                         onChange={setShippingProvince}
                         placeholder="จังหวัด"
+                        name="address-level1"
+                        autoComplete="address-level1"
                         error={errors.shippingProvince}
                       />
                       <Field
@@ -973,6 +1076,9 @@ function BookPage() {
                         onChange={(v) => setShippingPostalCode(v.replace(/\D/g, '').slice(0, 5))}
                         placeholder="XXXXX"
                         type="tel"
+                        name="postal-code"
+                        autoComplete="postal-code"
+                        inputMode="numeric"
                         error={errors.shippingPostalCode}
                       />
                     </div>
@@ -1294,15 +1400,20 @@ function SubOption({ selected, onClick, title, sub }: { selected: boolean; onCli
   )
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', error }: {
+function Field({ label, value, onChange, placeholder, type = 'text', error, name, autoComplete, inputMode }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder: string; type?: string; error?: string
+  // Let the phone's own autofill offer the owner's name/number/address
+  name?: string; autoComplete?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
 }) {
   return (
     <div>
       <label className="text-sm text-gray-500 block mb-1">{label}</label>
       <input
         type={type}
+        name={name}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
