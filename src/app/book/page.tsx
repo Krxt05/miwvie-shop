@@ -1179,17 +1179,18 @@ function BookPage() {
                     <span className="text-emerald-500 text-2xl">✓</span>
                   </div>
                   <h1 className="text-2xl font-bold mb-1">จองสำเร็จ!</h1>
-                  <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
+                  <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG หรือ LINE เพื่อยืนยัน</p>
                 </div>
                 {imageUploadFailed && (
                   <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     <strong className="block mb-0.5">การจองของคุณสำเร็จแล้ว</strong>
                     แต่ส่งรูปบัตรประชาชน/โปรไฟล์ IG ไม่สำเร็จ รบกวนส่งรูปมาที่ IG{' '}
-                    <span className="font-semibold">@miwvie_shop</span> พร้อมสลิปได้เลยค่ะ
+                    <span className="font-semibold">@miwvie_shop</span> หรือ LINE ของร้าน พร้อมสลิปได้เลยค่ะ
                   </div>
                 )}
                 <ReceiptCard
                   bookingId={bookingId}
+                  accessToken={accessToken}
                   form={{
                     cameraId: cameraId!,
                     rentalArea,

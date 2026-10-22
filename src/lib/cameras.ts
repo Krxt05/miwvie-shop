@@ -160,6 +160,8 @@ export const DELIVERY_LOCATION = 'หอพักเมธาเรสสิเ�
 // Where self pickup/return happens (the dorm above)
 export const SHOP_MAP_URL = 'https://maps.app.goo.gl/pHcoGaLEbY3njikQ9'
 export const PROMPTPAY_NUMBER = '0981016683'
+// The shop's LINE OA (@005vsebr) — customers can send slips here as well as IG
+export const LINE_URL = 'https://lin.ee/s6beUHc'
 
 // Provincial (ต่างจังหวัด) rentals: shipping fee for the outbound leg only (the customer
 // pays for the return leg themselves), and a

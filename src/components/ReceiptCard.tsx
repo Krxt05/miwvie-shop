@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
-import { ExternalLink, Camera } from 'lucide-react'
+import { ExternalLink, Camera, Link2, Check, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL, LINE_URL } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
@@ -16,12 +16,16 @@ interface Props {
   // The saved booking's amount, when re-showing the slip from the status page.
   // The server priced it, so it wins over recalculating from today's table.
   totalAmount?: number
-  // Hide the screenshot / IG buttons when the host page has its own.
+  // Hide the screenshot note and the IG / LINE / copy-link buttons.
   showActions?: boolean
+  // The booking's secret link token. When present the customer gets a button to
+  // copy their booking link, so the slip and QR can be reopened later.
+  accessToken?: string
 }
 
-export default function ReceiptCard({ bookingId, form, totalAmount, showActions = true }: Props) {
+export default function ReceiptCard({ bookingId, form, totalAmount, showActions = true, accessToken }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  const [linkCopied, setLinkCopied] = useState(false)
   const receiptRef = useRef<HTMLDivElement>(null)
 
   const isProvincial = form.rentalArea === 'provincial'
@@ -47,6 +51,21 @@ export default function ReceiptCard({ bookingId, form, totalAmount, showActions 
       .catch(() => { /* the number below still lets them pay */ })
     return () => { cancelled = true }
   }, [total])
+
+  async function copyBookingLink() {
+    const link = `${window.location.origin}/booking/${encodeURIComponent(bookingId)}?t=${encodeURIComponent(accessToken ?? '')}`
+    try {
+      await navigator.clipboard.writeText(link)
+    } catch {
+      // Clipboard blocked (some in-app browsers) — show the link in a prompt
+      // so the customer can still copy it by hand. Nothing was copied for
+      // them, so don't claim it was.
+      window.prompt('คัดลอกลิงก์ใบจองนี้เก็บไว้', link)
+      return
+    }
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2500)
+  }
 
   function openIGDM() {
     window.open('https://www.instagram.com/miwvie_shop/', '_blank')
@@ -167,8 +186,11 @@ export default function ReceiptCard({ bookingId, form, totalAmount, showActions 
 
         {/* Footer */}
         <div className="px-6 py-3 text-center">
-          <p className="text-gray-500 text-xs">ส่งสลิปมาที่</p>
-          <p className="text-pink text-sm font-semibold">@miwvie_shop</p>
+          <p className="text-gray-500 text-xs">ส่งสลิปมาที่ IG หรือ LINE</p>
+          <p className="text-pink text-sm font-semibold">
+            IG @miwvie_shop ·{' '}
+            <a href={LINE_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">LINE ร้าน</a>
+          </p>
           <p className="text-gray-400 text-[10px] mt-0.5">เพื่อยืนยันการจอง</p>
         </div>
       </div>
@@ -181,13 +203,34 @@ export default function ReceiptCard({ bookingId, form, totalAmount, showActions 
           <Camera size={20} className="text-gold shrink-0 mt-0.5" />
           <div>
             <p className="text-gold font-semibold text-sm mb-0.5">แคปหน้าจอใบจองนี้</p>
-            <p className="text-gray-500 text-xs leading-relaxed">ส่งรูปพร้อมสลิปการโอนเงินมาที่ IG เพื่อยืนยันการจอง</p>
+            <p className="text-gray-500 text-xs leading-relaxed">ส่งรูปพร้อมสลิปการโอนเงินมาที่ IG หรือ LINE เพื่อยืนยันการจอง</p>
           </div>
         </div>
         <Button onClick={openIGDM} variant="primary" fullWidth>
           <ExternalLink size={16} />
           ส่งสลิปทาง IG @miwvie_shop
         </Button>
+        <a
+          href={LINE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full rounded-xl px-6 py-3 font-medium text-white transition-all active:scale-95 hover:brightness-95"
+          style={{ background: '#06C755' }}
+        >
+          <MessageCircle size={16} />
+          ส่งสลิปทาง LINE
+        </a>
+        {accessToken && (
+          <div>
+            <Button onClick={copyBookingLink} variant="outline" fullWidth>
+              {linkCopied ? <Check size={16} /> : <Link2 size={16} />}
+              {linkCopied ? 'คัดลอกลิงก์แล้ว' : 'คัดลอกลิงก์ใบจอง'}
+            </Button>
+            <p className="text-gray-400 text-[11px] text-center mt-1.5">
+              เก็บลิงก์ไว้เปิดดูใบจองและ QR ได้ภายหลัง
+            </p>
+          </div>
+        )}
       </div>
       )}
     </div>

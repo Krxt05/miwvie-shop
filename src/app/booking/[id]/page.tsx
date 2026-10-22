@@ -128,7 +128,7 @@ function BookingStatusInner() {
         {booking && status && !loading && limited && (
           <div className="mb-4 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
             ลิงก์นี้แสดงได้เฉพาะสถานะการจอง — เปิดจากลิงก์ในใบจองที่ได้ตอนจองเสร็จ
-            เพื่อดูรายละเอียดทั้งหมด หรือทักมาที่ IG @miwvie_shop ได้เลยค่ะ
+            เพื่อดูรายละเอียดทั้งหมด หรือทักมาที่ IG @miwvie_shop หรือ LINE ร้านได้เลยค่ะ
           </div>
         )}
 
@@ -146,7 +146,7 @@ function BookingStatusInner() {
                   <span className="text-emerald-500 text-2xl">✓</span>
                 </div>
                 <h1 className="text-2xl font-bold mb-1">จองสำเร็จ!</h1>
-                <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG เพื่อยืนยัน</p>
+                <p className="text-gray-400 text-sm">ชำระเงินและส่งสลิปมาที่ IG หรือ LINE เพื่อยืนยัน</p>
               </div>
             ) : (
               <div className="glass-pink rounded-2xl p-6 text-center">
@@ -164,6 +164,7 @@ function BookingStatusInner() {
             {booking.bookingStatus === 'pending' ? (
               <ReceiptCard
                 bookingId={booking.bookingId}
+                accessToken={limited ? undefined : token}
                 totalAmount={Number(booking.totalAmount)}
                 form={{
                   ...booking,
