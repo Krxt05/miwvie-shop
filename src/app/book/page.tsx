@@ -7,7 +7,7 @@ import { addDays, addHours, format, differenceInHours } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Upload, X, Tag, Check as CheckIcon, Loader, MapPin } from 'lucide-react'
 import {
-  CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, EXTRA_DAY_RATE,
+  CAMERAS, PRICE_TABLES, calcPrice, calcDeliveryFee, hasCapacityConflict, BATTERY_CHARGE_BUFFER_MS, EXTRA_DAY_RATE,
   PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
   isDeliveryTime, DELIVERY_HOURS_LABEL, SHOP_MAP_URL, LOCAL_DELIVERY_FEE,
 } from '@/lib/cameras'
@@ -493,7 +493,9 @@ function BookPage() {
       bookedSlots.filter((slot) => slot.cameraId === cameraId),
       camera!.quantity,
       isProvincial ? addDays(pickupDatetime!, -PROVINCIAL_SHIP_LEAD_DAYS) : pickupDatetime!,
-      isProvincial ? addDays(returnDatetime!, PROVINCIAL_SHIP_LEAD_DAYS) : returnDatetime!,
+      isProvincial
+        ? addDays(returnDatetime!, PROVINCIAL_SHIP_LEAD_DAYS)
+        : new Date(returnDatetime!.getTime() + BATTERY_CHARGE_BUFFER_MS),
     )
 
   return (

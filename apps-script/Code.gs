@@ -424,9 +424,12 @@ function setupSheets() {
 
 // ── Availability ─────────────────────────────────────────────
 
-// Keep every booking off the market for an extra hour on both sides (to charge
-// the battery after a return, and to guarantee the same 1hr gap before a pickup
-// no matter which of two adjacent bookings was created first).
+// Keep a local booking off the market for one extra hour AFTER its return, to
+// charge the battery. Only the tail is padded: padding both sides would make
+// two bookings on the same unit with exactly a 1hr gap look like they overlap,
+// so they'd wrongly use up two units. New bookings get the same tail padding
+// (see createBooking and the client's selectionConflict), so the 1hr gap holds
+// no matter which of two adjacent bookings was created first.
 const BATTERY_CHARGE_BUFFER_MS = 60 * 60 * 1000
 
 // Raw readers — each hits its sheet exactly once, no matter how many camera
@@ -475,9 +478,10 @@ function readBookingSlotsAll(month) {
       ret = new Date(new Date(returnedAtRaw).getTime() + BATTERY_CHARGE_BUFFER_MS)
       if (ret < pickup) pickup = ret // returned before the delivered date (shipped early) — collapse
     } else {
-      // Head of the queue: reserve the lead time before the start day (ship-out
-      // leg for provincial, shared 1hr gap for local).
-      pickup = new Date(new Date(row[iPickup]).getTime() - buffer)
+      // Head of the queue: reserve the ship-out leg before the start day for
+      // provincial. Local needs no head padding (the 1hr charge gap sits on
+      // the tail of whichever booking comes first).
+      pickup = new Date(new Date(row[iPickup]).getTime() - (isProvincial ? buffer : 0))
       // Tail: return time + the same buffer. Provincial rows that predate the
       // returned_at column fall back to this too.
       ret = new Date(new Date(row[iReturn]).getTime() + buffer)
@@ -673,9 +677,9 @@ function createBooking(data) {
     // Always reads the live sheet (no cache) so the check can't miss a booking
     // that landed a moment earlier.
     const existingSlots = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
-    const candidateBuffer = isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : 0
-    const newPickup = new Date(pickupDate.getTime() - candidateBuffer)
-    const newReturn = new Date(returnDate.getTime() + candidateBuffer)
+    // Local candidates carry the 1hr battery-charge tail, same as stored rows.
+    const newPickup = new Date(pickupDate.getTime() - (isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : 0))
+    const newReturn = new Date(returnDate.getTime() + (isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : BATTERY_CHARGE_BUFFER_MS))
     const quantity = CAMERA_QUANTITY[data.cameraId] || 1
 
     const events = []

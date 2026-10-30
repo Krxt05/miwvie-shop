@@ -99,6 +99,11 @@ export function calcDeliveryFee(pickupType: string, returnType: string): number 
   return pickup + ret
 }
 
+// A local unit needs 1hr after each return to charge the battery. Stored slots
+// already carry it on their tail (server-side); a new local selection must add
+// it to its own return too. Must match BATTERY_CHARGE_BUFFER_MS in Code.gs.
+export const BATTERY_CHARGE_BUFFER_MS = 60 * 60 * 1000
+
 // Sweep-line: true if the number of slots overlapping at any point within
 // [rangeStart, rangeEnd) reaches quantity (all units taken at once).
 export function hasCapacityConflict(
