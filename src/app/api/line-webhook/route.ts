@@ -200,6 +200,7 @@ interface QueueItem {
   deliveredDate?: string
   customerName: string
   customerIG: string
+  contactChannel?: string
   pickupType: string
   returnType: string
   pickupAddress: string
@@ -264,35 +265,41 @@ function shortName(name: string): string {
 
 const isProvincial = (it: QueueItem) => it.rentalArea === 'provincial'
 
+// "IG name" / "LINE name" — older bookings didn't record which app, so they keep
+// the plain "IG" label they always had.
+function contact(it: QueueItem): string {
+  return `${it.contactChannel === 'line' ? 'LINE' : 'IG'} ${it.customerIG}`
+}
+
 function pickupBlock(it: QueueItem): string {
   if (isProvincial(it)) {
     const lines = [
       `🚚 ส่งพัสดุ  ${shortCam(it.cameraName)}`,
       it.customerName,
     ]
-    if (it.customerIG) lines.push(`IG ${it.customerIG}`)
+    if (it.customerIG) lines.push(contact(it))
     lines.push(`📮 ${it.shippingAddress?.trim() || '(ไม่ระบุที่อยู่)'}`)
     if (it.deliveredDate) lines.push(`📅 ให้ถึงมือลูกค้า ${dateLabel(it.deliveredDate, '')}`)
     return lines.join('\n')
   }
   const lines = [`${it.pickupTime}  ${shortCam(it.cameraName)}`, it.customerName]
   if (it.pickupType === 'delivery') {
-    if (it.customerIG) lines.push(`IG ${it.customerIG}`)
+    if (it.customerIG) lines.push(contact(it))
     lines.push(`📍 ส่ง → ${it.pickupAddress.trim() || '(ไม่ระบุที่อยู่)'}`)
   } else {
-    lines.push(it.customerIG ? `IG ${it.customerIG} | รับเอง` : 'รับเอง')
+    lines.push(it.customerIG ? `${contact(it)} | รับเอง` : 'รับเอง')
   }
   return lines.join('\n')
 }
 
 function returnBlock(it: QueueItem): string {
   if (isProvincial(it)) {
-    const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
+    const ig = it.customerIG ? `\n${contact(it)}` : ''
     return `📦 ${shortCam(it.cameraName)} | ${it.customerName}${ig}\nลูกค้าส่งพัสดุคืน (ก่อน 12:00 น.)`
   }
   const head = `${it.returnTime}  ${shortCam(it.cameraName)} | ${it.customerName}`
   if (it.returnType === 'delivery') {
-    const ig = it.customerIG ? `\nIG ${it.customerIG}` : ''
+    const ig = it.customerIG ? `\n${contact(it)}` : ''
     return `${head}${ig}\n📍 ร้านไปรับ → ${it.returnAddress.trim() || '(ไม่ระบุที่อยู่)'}`
   }
   return head

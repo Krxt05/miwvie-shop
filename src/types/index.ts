@@ -1,3 +1,6 @@
+// Where the customer chats with the shop — tells the admin which app to look in.
+export type ContactChannel = 'ig' | 'line'
+
 export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY510IS' | 'IXY200'
 export type PriceGroup = 'A' | 'B'
 
@@ -54,6 +57,7 @@ export interface BookingFormData {
   customerName: string
   customerPhone: string
   customerIG: string
+  contactChannel: ContactChannel | ''  // '' = older bookings, before the IG/LINE choice existed
   idCardImage: string
   igProfileImage: string
   discountCode: string

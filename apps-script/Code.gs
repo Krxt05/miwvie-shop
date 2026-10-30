@@ -15,6 +15,7 @@ const BOOKING_HEADERS = [
   'rental_area', 'shipping_address', 'shipping_subdistrict', 'shipping_district', 'shipping_province', 'shipping_postal_code',
   'returned_at',
   'access_token', 'request_key',
+  'contact_channel',
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for
@@ -250,6 +251,14 @@ function validateBookingInput(data) {
 
   const phone = String(data.customerPhone == null ? '' : data.customerPhone).replace(/[^0-9]/g, '')
   if (phone.length < 9 || phone.length > 10) errors.push('เบอร์โทรไม่ถูกต้อง')
+
+  // The shop matches the slip to the chat by this name, so it's required. The
+  // channel is checked only when sent: a tab opened before the IG/LINE choice
+  // existed doesn't send one, and shouldn't be locked out of booking.
+  if (!String(data.customerIG || '').trim()) errors.push('กรุณากรอกชื่อ IG หรือ LINE ที่ใช้ทักร้าน')
+  if (data.contactChannel && data.contactChannel !== 'ig' && data.contactChannel !== 'line') {
+    errors.push('ช่องทางติดต่อไม่ถูกต้อง')
+  }
 
   if (area === 'provincial') {
     const required = [
@@ -731,6 +740,7 @@ function createBooking(data) {
       customer_name: String(data.customerName || '').trim(),
       customer_phone: String(data.customerPhone || '').trim(),
       customer_ig: String(data.customerIG || '').trim(),
+      contact_channel: data.contactChannel === 'line' ? 'line' : data.contactChannel === 'ig' ? 'ig' : '',
       id_card_url: idCardUrl,
       ig_profile_url: igUrl,
       payment_status: 'pending',
@@ -1026,6 +1036,7 @@ function buildQueueItem(row, col) {
     customerName: row[col['customer_name']],
     customerPhone: String(row[col['customer_phone']] || ''),
     customerIG: row[col['customer_ig']] || '',
+    contactChannel: col['contact_channel'] != null ? (row[col['contact_channel']] || '') : '',
     pickupType: isProvincial ? 'ship' : row[col['pickup_type']],
     returnType: isProvincial ? 'ship' : row[col['return_type']],
     pickupAddress: row[col['pickup_address']] || '',
@@ -1536,7 +1547,9 @@ function sendLineNotify(bookingId, data, discountAmount) {
       ? '📅 พัสดุถึงมือลูกค้า: ' + pickup + ' → ส่งคืน: ' + ret + ' (ก่อน 12:00 น.)'
       : '📅 รับ: ' + pickup + ' → คืน: ' + ret,
     '👤 ' + data.customerName + ' | ' + data.customerPhone +
-      (data.customerIG ? ' | IG/LINE: ' + data.customerIG : ''),
+      (data.customerIG
+        ? ' | ' + (data.contactChannel === 'line' ? 'LINE' : data.contactChannel === 'ig' ? 'IG' : 'IG/LINE') + ': ' + data.customerIG
+        : ''),
     '💰 ' + data.totalAmount + ' ฿' + discount,
   ].concat(logisticsLines).join('\n')
 

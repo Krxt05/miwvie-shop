@@ -117,7 +117,7 @@ export default function BookingCard({ b, expanded, onToggle, actions, context }:
                 <Detail label="เลขจอง" value={b.bookingId} mono />
                 <Detail label="ชื่อ" value={String(b.customerName)} />
                 <Detail label="โทร" value={String(b.customerPhone)} />
-                <Detail label="IG" value={String(b.customerIG) || '-'} />
+                <ContactDetail channel={b.contactChannel} name={String(b.customerIG)} />
                 <Detail label="กล้อง" value={cameraName(b.cameraId)} />
                 <Detail label="พื้นที่" value={isProv ? 'ต่างจังหวัด (ส่งพัสดุ)' : 'ในพื้นที่ มมส.'} />
                 {isProv && b.pickupDatetime && (
@@ -307,6 +307,30 @@ function ReviewCode({ bookingId, code, loading, onGenerate }: { bookingId: strin
           <Gift size={14} />
           ออกโค้ดส่วนลด
         </Button>
+      )}
+    </div>
+  )
+}
+
+// IG names link straight to the profile; a LINE display name can't be linked to.
+// Older bookings didn't record the app, so they keep the "IG/LINE" label.
+function ContactDetail({ channel, name }: { channel: Booking['contactChannel']; name: string }) {
+  const label = channel === 'line' ? 'LINE' : channel === 'ig' ? 'IG' : 'IG/LINE'
+  const handle = name.trim().replace(/^@/, '')
+  return (
+    <div className="min-w-0">
+      <p className="text-gray-400 text-xs">{label}</p>
+      {channel === 'ig' && /^[A-Za-z0-9._]+$/.test(handle) ? (
+        <a
+          href={`https://instagram.com/${handle}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm mt-0.5 truncate block text-pink-700 underline underline-offset-2"
+        >
+          @{handle}
+        </a>
+      ) : (
+        <p className="text-sm mt-0.5 truncate">{name || '-'}</p>
       )}
     </div>
   )

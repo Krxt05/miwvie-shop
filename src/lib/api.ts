@@ -27,6 +27,7 @@ function mapBooking(r: Record<string, any>): Booking {
     customerName:   String(r.customer_name ?? ''),
     customerPhone:  String(r.customer_phone ?? ''),
     customerIG:     String(r.customer_ig ?? ''),
+    contactChannel: r.contact_channel === 'ig' || r.contact_channel === 'line' ? r.contact_channel : '',
     idCardImage:    String(r.id_card_url ?? ''),
     igProfileImage: String(r.ig_profile_url ?? ''),
     paymentStatus:  (r.payment_status as PaymentStatus) || 'pending',

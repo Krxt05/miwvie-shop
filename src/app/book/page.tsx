@@ -16,7 +16,7 @@ import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
 import Button from '@/components/ui/Button'
-import { BookedSlot, BookingFormData, CameraId, DeliveryType, RentalArea } from '@/types'
+import { BookedSlot, BookingFormData, CameraId, ContactChannel, DeliveryType, RentalArea } from '@/types'
 
 const DURATION_OPTIONS = [
   { hours: 6, label: '6 ชั่วโมง' },
@@ -33,7 +33,7 @@ const DURATION_OPTIONS = [
 // browser. Never the ID/profile photos, never anything from the server.
 const SAVED_CUSTOMER_KEY = 'miwvie_customer_v1'
 interface SavedCustomer {
-  name?: string; phone?: string; ig?: string; pickupAddress?: string
+  name?: string; phone?: string; ig?: string; contactChannel?: ContactChannel; pickupAddress?: string
   shippingAddress?: string; shippingSubdistrict?: string; shippingDistrict?: string
   shippingProvince?: string; shippingPostalCode?: string
 }
@@ -99,6 +99,8 @@ function BookPage() {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerIG, setCustomerIG] = useState('')
+  // No default on purpose: the customer must say which app they chat from.
+  const [contactChannel, setContactChannel] = useState<ContactChannel | ''>('')
   const [idCardImage, setIdCardImage] = useState('')
   const [igProfileImage, setIgProfileImage] = useState('')
   const [discountCode, setDiscountCode] = useState('')
@@ -129,6 +131,7 @@ function BookPage() {
     setCustomerName(saved.name ?? '')
     setCustomerPhone(saved.phone ?? '')
     setCustomerIG(saved.ig ?? '')
+    if (saved.contactChannel === 'ig' || saved.contactChannel === 'line') setContactChannel(saved.contactChannel)
     // One remembered delivery address serves either leg: the pickup field, and
     // the return field used when only the return is collected by the shop.
     setPickupAddress(saved.pickupAddress ?? '')
@@ -149,6 +152,7 @@ function BookPage() {
     setCustomerName('')
     setCustomerPhone('')
     setCustomerIG('')
+    setContactChannel('')
     setShippingAddress('')
     setShippingSubdistrict('')
     setShippingDistrict('')
@@ -373,6 +377,8 @@ function BookPage() {
       if (!/^0\d{8,9}$/.test(customerPhone.replace(/[^0-9]/g, ''))) {
         errs.phone = 'เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก ขึ้นต้นด้วย 0'
       }
+      if (!contactChannel) errs.contact = 'กรุณาเลือกว่าทักร้านทาง IG หรือ LINE'
+      else if (!customerIG.trim()) errs.contact = contactChannel === 'line' ? 'กรุณากรอกชื่อ LINE' : 'กรุณากรอกชื่อ IG'
       if (!idCardImage) errs.idCard = 'กรุณาอัปโหลดบัตรประชาชน'
       if (!igProfileImage) errs.igProfile = 'กรุณาอัปโหลดแคปหน้าโปรไฟล์ IG หรือ Facebook'
     }
@@ -415,6 +421,7 @@ function BookPage() {
         customerName,
         customerPhone,
         customerIG,
+        contactChannel,
         idCardImage,
         igProfileImage,
         discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',
@@ -433,6 +440,7 @@ function BookPage() {
         name: customerName.trim(),
         phone: customerPhone.trim(),
         ig: customerIG.trim(),
+        contactChannel: contactChannel || undefined,
         ...(isProvincial
           ? {
               shippingAddress: shippingAddress.trim(),
@@ -1012,14 +1020,46 @@ function BookPage() {
                     inputMode="tel"
                     error={errors.phone}
                   />
-                  <Field
-                    label="ชื่อ IG หรือ Line ที่ใช้ทักเข้ามา"
-                    value={customerIG}
-                    onChange={setCustomerIG}
-                    placeholder="@username"
-                    name="social"
-                    autoComplete="off"
-                  />
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">ทักร้านทางไหน *</label>
+                    <div className="grid grid-cols-2 gap-2 mb-2" role="radiogroup" aria-label="ช่องทางที่ทักร้าน">
+                      {([['ig', 'IG'], ['line', 'LINE']] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={contactChannel === value}
+                          onClick={() => {
+                            setContactChannel(value)
+                            // "pick IG or LINE" no longer applies once they have
+                            if (errors.contact && !customerIG.trim()) setErrors(({ contact: _, ...rest }) => rest)
+                          }}
+                          className={`rounded-xl py-2.5 text-sm font-semibold border transition-colors ${
+                            contactChannel === value
+                              ? 'bg-pink-700 text-cream border-pink-700'
+                              : `glass text-gray-600 ${errors.contact && !contactChannel ? 'border-pink/60' : ''}`
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {contactChannel && (
+                      <input
+                        type="text"
+                        name="social"
+                        autoComplete="off"
+                        value={customerIG}
+                        onChange={(e) => setCustomerIG(e.target.value)}
+                        placeholder={contactChannel === 'line' ? 'ชื่อที่แสดงใน LINE' : '@username'}
+                        aria-label={contactChannel === 'line' ? 'ชื่อ LINE' : 'ชื่อ IG'}
+                        className={`w-full glass rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder:text-gray-300 ${
+                          errors.contact ? 'border-pink/60' : 'focus:border-pink/50'
+                        }`}
+                      />
+                    )}
+                    {errors.contact && <p className="text-pink text-xs mt-1">{errors.contact}</p>}
+                  </div>
                 </div>
 
                 {isProvincial && (
@@ -1317,6 +1357,7 @@ function BookPage() {
                     customerName,
                     customerPhone,
                     customerIG,
+                    contactChannel,
                     idCardImage,
                     igProfileImage,
                     discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',

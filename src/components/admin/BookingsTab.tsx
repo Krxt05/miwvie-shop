@@ -63,6 +63,7 @@ export default function BookingsTab({ bookings, filters, setFilters, expanded, s
           String(b.customerName).toLowerCase().includes(q) ||
           String(b.customerPhone).includes(q) ||
           String(b.customerIG).toLowerCase().includes(q) ||
+          b.contactChannel === q ||
           String(b.adminNotes).toLowerCase().includes(q)
         )
       }
