@@ -17,6 +17,7 @@ export default function DebugOverlay() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [stats, setStats] = useState({ stalls: 0, worst: 0, frames: 0 })
   const [entry, setEntry] = useState('')
+  const [live, setLive] = useState('')
   const lastAction = useRef('-')
   const pathRef = useRef(pathname)
   pathRef.current = pathname
@@ -83,7 +84,29 @@ export default function DebugOverlay() {
       } catch { /* not supported in this browser */ }
     }
 
+    // 4) every second: how many DOM changes happened, and which animations are
+    // running right now — a page redrawing itself in a loop, or an animation
+    // that never stops, shows up here even when nobody is touching the screen.
+    let mutations = 0
+    const mo = new MutationObserver((list) => {
+      for (const m of list) if (!(m.target as Element).closest?.('[data-debug-overlay]')) mutations++
+    })
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true })
+    const iv = setInterval(() => {
+      const anims = (document.getAnimations?.() ?? []).filter((a) => a.playState === 'running')
+      const names = anims.slice(0, 4).map((a) => {
+        const el = (a.effect as KeyframeEffect | null)?.target as Element | null
+        const name = (a as CSSAnimation).animationName || (a as CSSTransition).transitionProperty || 'js'
+        const cls = el && typeof el.className === 'string' ? el.className.split(' ').slice(0, 2).join('.') : el?.tagName
+        return `${name}@${cls ?? '?'}`
+      })
+      setLive(`แก้หน้า ${mutations}/วิ · animation ${anims.length}${names.length ? ': ' + names.join(', ') : ''}`)
+      mutations = 0
+    }, 1000)
+
     return () => {
+      clearInterval(iv)
+      mo.disconnect()
       cancelAnimationFrame(raf)
       window.removeEventListener('pointerdown', onDown, { capture: true })
       observers.forEach((o) => o.disconnect())
@@ -93,6 +116,7 @@ export default function DebugOverlay() {
   if (!on) return null
   return (
     <div
+      data-debug-overlay
       style={{ position: 'fixed', left: 6, right: 6, bottom: 6, zIndex: 9999, pointerEvents: 'none' }}
       className="rounded-lg bg-black/80 text-[10px] leading-tight text-white font-mono p-2"
     >
@@ -100,6 +124,7 @@ export default function DebugOverlay() {
         <span>เข้ามาจาก: {entry || '-'}</span>
         <span>ค้าง {stats.stalls} ครั้ง · แย่สุด {stats.worst}ms</span>
       </div>
+      <div className="text-cyan-200">{live}</div>
       {entries.map((e, i) => (
         <div key={i} className={e.ms > 150 ? 'text-red-300' : e.ms > 80 ? 'text-yellow-200' : ''}>
           {e.t}s {e.kind} {e.ms}ms · {e.where} · หลัง{e.after}
