@@ -67,12 +67,12 @@ export default function AvailabilitySheet({ bookings, blockedSlots, onClose }: P
   const fromValue = (v: string, prev: string) => (area === 'provincial' ? `${v}${prev.slice(10)}` : v)
 
   return (
-    <div className="fixed inset-0 z-[65] flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="เช็คคิวว่าง"
-        className="w-full sm:max-w-md max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-4 tabular-nums"
+        className="w-full sm:max-w-md max-h-[90dvh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl bg-white p-4 tabular-nums"
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
         onClick={(ev) => ev.stopPropagation()}
       >

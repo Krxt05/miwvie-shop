@@ -1,5 +1,6 @@
 'use client'
 import { memo, ReactNode, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown, ChevronUp, ExternalLink, CheckCircle, Package, RotateCcw,
   XCircle, Gift, Copy, Check, StickyNote, AlertTriangle, MessageCircle, Phone, MapPin, Ban, X,
@@ -311,7 +312,9 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
         </div>
       )}
 
-      {sheet && <MessageSheet b={b} reviewCode={existingCode} onClose={() => setSheet(false)} />}
+      {/* Rendered on <body>, not inside the card: a faded (done) card made the
+          sheet see-through, and the card's stacking put it under the tab bar. */}
+      {sheet && createPortal(<MessageSheet b={b} reviewCode={existingCode} onClose={() => setSheet(false)} />, document.body)}
     </div>
   )
 }
@@ -359,7 +362,13 @@ function MessageSheet({ b, reviewCode, onClose }: { b: Booking; reviewCode: stri
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Keep the page behind from scrolling under the finger
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
   }, [onClose])
 
   async function copy(id: string, text: string) {
@@ -373,12 +382,12 @@ function MessageSheet({ b, reviewCode, onClose }: { b: Booking; reviewCode: stri
   }
 
   return (
-    <div className="fixed inset-0 z-[65] flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="ข้อความถึงลูกค้า"
-        className="w-full sm:max-w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-4"
+        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl bg-white p-4 text-left"
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}
       >

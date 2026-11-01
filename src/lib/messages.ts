@@ -67,10 +67,24 @@ export function messageTemplates(b: Booking, reviewCode?: string): MessageTempla
     id: 'review',
     label: 'ขอรีวิว',
     text: [
-      'ขอบคุณที่ใช้บริการ MIWVIE SHOP 💕',
-      'ส่งรูปรีวิว 4 รูป รับส่วนลด 10% สำหรับเช่าครั้งต่อไป',
-      reviewCode ? `โค้ดส่วนลด: ${reviewCode}` : '',
+      'ขอบคุณที่ใช้บริการค่ะ🙏💕',
+      'ตัวเองสามารถส่งรูปรีวิว 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
+      reviewCode ? `🎁 Code ส่วนลด: ${reviewCode}` : '',
     ].filter(Boolean).join('\n'),
   })
+
+  // The message most likely needed now goes first; ones that no longer fit
+  // the booking's stage are dropped.
+  const order = ORDER[b.bookingStatus] ?? []
   return out
+    .filter((t) => order.includes(t.id))
+    .sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id))
+}
+
+const ORDER: Record<string, string[]> = {
+  pending: ['docs', 'paid', 'ready', 'remind'],
+  confirmed: ['ready', 'paid', 'remind', 'docs'],
+  active: ['overdue', 'remind', 'review'],
+  returned: ['review'],
+  cancelled: [],
 }
