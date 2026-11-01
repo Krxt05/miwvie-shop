@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
+import { warmQueues } from '@/lib/api'
 import Image from 'next/image'
 import {
   Instagram,
@@ -127,6 +128,15 @@ export default function Home() {
   const [calcCam, setCalcCam] = useState<CameraId>(CAMERAS[0].id)
   const [calcDur, setCalcDur] = useState<keyof PriceTable>('day1')
   const [showBar, setShowBar] = useState(false)
+
+  // Get the booking queues ready (CDN cache + Apps Script awake) while the
+  // customer is still reading, so the date step doesn't stall after "จองเลย".
+  useEffect(() => {
+    const go = () => warmQueues(CAMERAS.map((c) => c.id))
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
+    if (ric) ric(go)
+    else setTimeout(go, 1500)
+  }, [])
 
   // Mobile booking bar appears once the hero's own buttons are scrolled away
   useEffect(() => {

@@ -16,6 +16,9 @@ const GET_ACTIONS = new Set([
   'validateDiscountCode',
 ])
 
+// Read-only queue lookups that may be served from the CDN cache
+const QUEUE_ACTIONS = new Set(['getAvailability', 'getAllAvailability'])
+
 const POST_ACTIONS = new Set([
   // customer flow
   'createBooking',
@@ -113,13 +116,23 @@ export async function GET(request: NextRequest) {
   }
 
   const text = await res.text()
+  let payload: { error?: unknown }
   try {
-    return NextResponse.json(JSON.parse(text))
+    payload = JSON.parse(text)
   } catch {
     // Apps Script hands back an HTML interstitial when it is unhappy. Never
     // relay that to the browser — it is neither JSON nor safe to render.
     return fail('UPSTREAM_BAD_RESPONSE', requestId)
   }
+
+  // Queue reads take Apps Script 3-20s. Let Vercel's CDN keep a good answer for
+  // 30s and keep serving it (while refreshing in the background) for up to 10
+  // min, so customers almost never wait on Apps Script. Safe: createBooking
+  // re-checks the live sheet, so a slot taken in the meantime is still refused.
+  const cacheable = QUEUE_ACTIONS.has(action) && !payload?.error
+  return NextResponse.json(payload, cacheable
+    ? { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=600' } }
+    : undefined)
 }
 
 export async function POST(request: NextRequest) {

@@ -11,7 +11,7 @@ import {
   PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
   isDeliveryTime, DELIVERY_HOURS_LABEL, SHOP_MAP_URL, LOCAL_DELIVERY_FEE,
 } from '@/lib/cameras'
-import { getAvailability, createBooking, attachImages, validateDiscountCode } from '@/lib/api'
+import { getAvailability, createBooking, attachImages, validateDiscountCode, queueFromDate } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
@@ -70,6 +70,8 @@ const QUEUE_LOADING_MSG = 'กำลังโหลดคิว รอสัก�
 function BookPage() {
   const params = useSearchParams()
   const router = useRouter()
+  // Fetch the home page ahead of time so its button switches pages at once
+  useEffect(() => { router.prefetch('/') }, [router])
 
   const [step, setStep] = useState(0)
   // Ignore a stale ?camera= (e.g. an old link to a retired model) so the
@@ -199,10 +201,8 @@ function BookPage() {
     ? DURATION_OPTIONS.filter((o) => o.hours >= MIN_PROVINCIAL_DURATION_HOURS)
     : DURATION_OPTIONS
 
-  // Tell the customer the queue has arrived instead of leaving them guessing:
-  // a short "loaded" note, and drop the "still loading" error from an earlier
-  // tap on Next so it doesn't linger after the data is in.
-  const [queueJustLoaded, setQueueJustLoaded] = useState(false)
+  // Once the queue arrives, drop the "still loading" error from an earlier tap
+  // on Next so it doesn't linger after the data is in.
   const prevSlotsLoadingRef = useRef(0)
   useEffect(() => {
     const was = prevSlotsLoadingRef.current
@@ -214,10 +214,6 @@ function BookPage() {
       delete rest.pickup
       return rest
     })
-    if (slotsError) return
-    setQueueJustLoaded(true)
-    const t = setTimeout(() => setQueueJustLoaded(false), 4000)
-    return () => clearTimeout(t)
   }, [slotsLoading, slotsError])
 
   const fetchedCamerasRef = useRef<Set<string>>(new Set())
@@ -230,19 +226,16 @@ function BookPage() {
   //
   // The whole upcoming queue for a camera comes back in a single read, so a
   // rental running past the month on screen (31 Oct → 4 Nov) is covered too.
-  function fetchCameraQueue() {
-    if (!cameraId) return
-    const key = cameraId
+  function fetchCameraQueue(id: CameraId | null = cameraId) {
+    if (!id) return
+    const key = id
     if (fetchedCamerasRef.current.has(key) || inFlightRef.current.has(key)) return
     // NOTE: marked loaded only after the request succeeds. Marking it up front
     // meant a single failed read left the queue permanently "already loaded" —
     // and thus permanently blank — for the rest of the session.
     inFlightRef.current.add(key)
     setQueueStatus((q) => ({ ...q, [key]: { state: 'loading' } }))
-    // Anything that ended before yesterday can't clash with a new booking
-    const from = addDays(new Date(), -1)
-    from.setHours(0, 0, 0, 0)
-    getAvailability(key, { from })
+    getAvailability(key, { from: queueFromDate() })
       .then((slots) => {
         fetchedCamerasRef.current.add(key)
         setBookedSlots((prev) => {
@@ -262,6 +255,14 @@ function BookPage() {
     fetchCameraQueue()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
+
+  // Start loading every model's queue as soon as the page opens, so it's
+  // usually ready by the time the customer reaches the date step instead of
+  // making them wait there (and stalling "ถัดไป" while it loads).
+  useEffect(() => {
+    CAMERAS.forEach((c) => fetchCameraQueue(c.id as CameraId))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Deep link from the home page (/book?camera=X) preselects the camera. With
   // the provincial option live we must NOT skip past the area step, or everyone
@@ -387,15 +388,32 @@ function BookPage() {
     return Object.keys(errs).length === 0
   }
 
+  // Hold the step area at its current height while one step leaves and the
+  // next arrives. Without this the page collapses for a moment between them
+  // (the old step is gone, the new one isn't mounted yet), the buttons jump up
+  // and back down, and long steps visibly stutter on phones.
+  const stepAreaRef = useRef<HTMLDivElement>(null)
+  function holdStepHeight() {
+    const el = stepAreaRef.current
+    if (el) el.style.minHeight = `${el.offsetHeight}px`
+  }
+  function releaseStepHeight() {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    // Let the new step mount first, then drop the hold
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (stepAreaRef.current) stepAreaRef.current.style.minHeight = ''
+    }))
+  }
+
   function next() {
     if (!validateStep()) return
+    holdStepHeight()
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function back() {
+    holdStepHeight()
     setStep((s) => Math.max(s - 1, 0))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   async function handleSubmit() {
@@ -576,7 +594,11 @@ function BookPage() {
           </div>
         )}
 
-        <AnimatePresence mode="wait">
+        {/* Scroll to the top in the gap between the old step leaving and the new
+            one arriving. A smooth scroll started on click ran alongside the swap
+            while the page height changed under it, which made it stutter. */}
+        <div ref={stepAreaRef}>
+        <AnimatePresence mode="wait" onExitComplete={releaseStepHeight}>
           <motion.div
             key={step}
             initial={{ opacity: 0, x: 20 }}
@@ -664,28 +686,29 @@ function BookPage() {
                     <button
                       type="button"
                       className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-white text-xs font-semibold"
-                      onClick={fetchCameraQueue}
+                      onClick={() => fetchCameraQueue()}
                     >
                       ลองใหม่
                     </button>
                   </div>
                 )}
-                {!slotsError && slotsLoading > 0 && (
-                  <div role="status" className="mb-4 flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
-                    <Loader size={16} className="animate-spin text-pink shrink-0" />
-                    กำลังโหลดคิวว่างของกล้องรุ่นนี้…
-                  </div>
-                )}
-                {!slotsError && slotsLoading === 0 && queueJustLoaded && (
-                  <motion.div
+                {/* One status line that stays put: only its text and colour change.
+                    It used to appear, turn green, then vanish 4s later, and each
+                    of those pushed the whole calendar and the buttons up/down. */}
+                {!slotsError && (
+                  <div
                     role="status"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-4 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700"
+                    className={`mb-4 flex items-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm transition-colors ${
+                      slotsLoading > 0
+                        ? 'border-gray-200 bg-gray-50 text-gray-500'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}
                   >
-                    <CheckIcon size={16} className="shrink-0" />
-                    โหลดคิวเสร็จแล้ว เลือกวันและเวลาได้เลย
-                  </motion.div>
+                    {slotsLoading > 0
+                      ? <Loader size={16} className="animate-spin text-pink shrink-0" />
+                      : <CheckIcon size={16} className="shrink-0" />}
+                    {slotsLoading > 0 ? 'กำลังโหลดคิวว่างของกล้องรุ่นนี้…' : 'คิวล่าสุดแล้ว เลือกวันและเวลาได้เลย'}
+                  </div>
                 )}
                 {/* Camera preview header */}
                 <div className="glass rounded-xl p-4 flex items-center gap-4 mb-5">
@@ -711,8 +734,14 @@ function BookPage() {
                           onClick={() => setZoomedImage(img)}
                           className="aspect-square rounded-xl overflow-hidden border border-pink-100 bg-pink-50 cursor-zoom-in transition-transform hover:scale-[1.03] active:scale-95"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img} alt={`${camera.name} ${idx + 1}`} className="w-full h-full object-cover" />
+                          <Image
+                            src={img}
+                            alt={`${camera.name} ${idx + 1}`}
+                            width={240}
+                            height={240}
+                            sizes="(max-width: 512px) 33vw, 170px"
+                            className="w-full h-full object-cover"
+                          />
                         </button>
                       ))}
                     </div>
@@ -1373,6 +1402,7 @@ function BookPage() {
             )}
           </motion.div>
         </AnimatePresence>
+        </div>
 
         {/* Navigation buttons */}
         {step < STEPS.length && (

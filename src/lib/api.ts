@@ -93,7 +93,10 @@ async function send(input: RequestInfo, init?: RequestInit): Promise<any> {
 async function get(params: Record<string, string>): Promise<any> {
   const url = new URL(BASE, location.origin)
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-  return send(url.toString(), { cache: 'no-store' })
+  // Queue reads may come from Vercel's CDN cache (see /api/sheets); 'no-store'
+  // would send no-cache headers and force every read through to Apps Script.
+  const queueRead = params.action === 'getAvailability' || params.action === 'getAllAvailability'
+  return send(url.toString(), { cache: queueRead ? 'default' : 'no-store' })
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,6 +133,24 @@ function newRequestKey() {
   const c = typeof crypto !== 'undefined' ? crypto : undefined
   if (c && 'randomUUID' in c) return c.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+// Start of yesterday (local time): anything that ended before it can't clash
+// with a new booking. Shared by every caller so they ask for the exact same URL
+// and hit the same CDN cache entry.
+export function queueFromDate(): Date {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// Fire-and-forget: get every model's queue into the CDN cache (and Apps Script
+// awake) before the customer reaches the date step.
+export function warmQueues(cameraIds: string[]) {
+  cameraIds.forEach((id) => {
+    getAvailability(id as CameraId, { from: queueFromDate() }).catch(() => { /* just a warm-up */ })
+  })
 }
 
 // Without a month the backend returns every month for the camera in one read.
