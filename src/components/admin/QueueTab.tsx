@@ -37,8 +37,11 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
   const requestKey = useRef(newRequestKey())
   const [showForm, setShowForm] = useState(false)
   const [camera, setCamera] = useState<CameraId | 'ALL'>('ALL')
-  const [start, setStart] = useState('')
-  const [end, setEnd] = useState('')
+  // Blocks are whole hours: a date plus an hour, no minutes to fiddle with
+  const [startDate, setStartDate] = useState('')
+  const [startHour, setStartHour] = useState('10')
+  const [endDate, setEndDate] = useState('')
+  const [endHour, setEndHour] = useState('10')
   const [reason, setReason] = useState('')
   const [qty, setQty] = useState(1)
   const [submitting, setSubmitting] = useState(false)
@@ -49,9 +52,9 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    if (!start || !end) return
-    const s = new Date(start)
-    const en = new Date(end)
+    if (!startDate || !endDate) return
+    const s = new Date(`${startDate}T${startHour.padStart(2, '0')}:00:00+07:00`)
+    const en = new Date(`${endDate}T${endHour.padStart(2, '0')}:00:00+07:00`)
     if (en <= s) {
       toast('เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม', 'error')
       return
@@ -66,8 +69,8 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
       requestKey.current = newRequestKey()
       // The block is saved; a failed re-read only means the list refreshes later
       listBlockedSlots(pin).then(setBlockedSlots).catch(() => {})
-      setStart('')
-      setEnd('')
+      setStartDate('')
+      setEndDate('')
       setReason('')
       setQty(1)
       setShowForm(false)
@@ -223,16 +226,14 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                   </label>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="text-xs text-gray-500">
-                    เริ่ม
-                    <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} required
-                      className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent" />
-                  </label>
-                  <label className="text-xs text-gray-500">
-                    ถึง
-                    <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required
-                      className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent" />
-                  </label>
+                  <DateHour
+                    label="เริ่ม"
+                    date={startDate}
+                    hour={startHour}
+                    onDate={(d) => { setStartDate(d); if (!endDate || endDate < d) setEndDate(d) }}
+                    onHour={setStartHour}
+                  />
+                  <DateHour label="ถึง" date={endDate} hour={endHour} onDate={setEndDate} onHour={setEndHour} />
                 </div>
                 <input
                   value={reason}
@@ -292,5 +293,28 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
         </div>
       </div>
     </div>
+  )
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => String(h))
+const FIELD = 'min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent'
+
+function DateHour({ label, date, hour, onDate, onHour }: {
+  label: string
+  date: string
+  hour: string
+  onDate: (v: string) => void
+  onHour: (v: string) => void
+}) {
+  return (
+    <fieldset className="text-xs text-gray-600">
+      <legend>{label}</legend>
+      <div className="mt-1 flex gap-2">
+        <input type="date" value={date} onChange={(e) => onDate(e.target.value)} required aria-label={`${label} วันที่`} className={`flex-1 min-w-0 ${FIELD}`} />
+        <select value={hour} onChange={(e) => onHour(e.target.value)} aria-label={`${label} เวลา`} className={`w-28 ${FIELD}`}>
+          {HOURS.map((h) => <option key={h} value={h}>{h.padStart(2, '0')}:00</option>)}
+        </select>
+      </div>
+    </fieldset>
   )
 }

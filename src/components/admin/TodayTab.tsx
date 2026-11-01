@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle, Wallet, PackageX } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarDays, CheckCircle, Wallet, PackageX } from 'lucide-react'
 import { Booking, BookingStatus } from '@/types'
 import {
   CustomerInfo, agoLabel, bangkokDay, dayLabel, dayTimeLabel, dueBack, handoverDay, isNotHandedOver,
@@ -20,9 +20,12 @@ interface Props {
 // Work queue, most urgent first: late cameras → paid but never handed over →
 // payments to check → the day's handovers and returns in time order.
 export default function TodayTab({ bookings, expanded, onToggle, actions, customerOf, onJumpToStatus }: Props) {
-  const [which, setWhich] = useState<'today' | 'tomorrow'>('today')
+  // 'yyyy-MM-dd' in Bangkok; '' = today (so it rolls over at midnight)
+  const [picked, setPicked] = useState('')
   const today = bangkokDay(Date.now())
-  const day = which === 'today' ? today : shiftDay(today, 1)
+  const tomorrow = shiftDay(today, 1)
+  const day = picked || today
+  const which: 'today' | 'tomorrow' | 'other' = day === today ? 'today' : day === tomorrow ? 'tomorrow' : 'other'
 
   const { overdue, notHandedOver, pending, timeline, counts } = useMemo(() => {
     const live = bookings.filter((b) => b.bookingStatus !== 'cancelled')
@@ -108,25 +111,46 @@ export default function TodayTab({ bookings, expanded, onToggle, actions, custom
 
       <section>
         <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-gradient-dark">
-          <div className="grid grid-cols-2 rounded-xl glass p-1" role="tablist" aria-label="เลือกวัน">
+          <div className="grid grid-cols-3 gap-1 rounded-xl glass p-1" role="tablist" aria-label="เลือกวัน">
             {(['today', 'tomorrow'] as const).map((w) => (
               <button
                 key={w}
                 role="tab"
                 aria-selected={which === w}
-                onClick={() => setWhich(w)}
-                className={`min-h-11 rounded-lg text-sm font-medium transition-colors ${
+                onClick={() => setPicked(w === 'today' ? '' : tomorrow)}
+                className={`min-h-11 rounded-lg text-sm font-medium leading-tight transition-colors ${
                   which === w ? 'bg-pink text-white' : 'text-gray-600'
                 }`}
               >
                 {w === 'today' ? 'วันนี้' : 'พรุ่งนี้'}
-                <span className="ml-1.5 text-xs opacity-80">{weekdayLabel(`${w === 'today' ? today : shiftDay(today, 1)}T12:00:00+07:00`)}</span>
+                <span className="block text-[11px] opacity-80">{weekdayLabel(`${w === 'today' ? today : tomorrow}T12:00:00+07:00`)}</span>
               </button>
             ))}
+            {/* The native date picker sits invisibly over the button, so a tap
+                opens the phone's own calendar */}
+            <label
+              role="tab"
+              aria-selected={which === 'other'}
+              className={`relative min-h-11 rounded-lg text-sm font-medium leading-tight flex flex-col items-center justify-center transition-colors ${
+                which === 'other' ? 'bg-pink text-white' : 'text-gray-600'
+              }`}
+            >
+              <span className="flex items-center gap-1"><CalendarDays size={14} /> {which === 'other' ? 'วันที่' : 'เลือกวัน'}</span>
+              {which === 'other' && <span className="block text-[11px] opacity-80">{weekdayLabel(`${day}T12:00:00+07:00`)}</span>}
+              <input
+                type="date"
+                value={day}
+                onChange={(e) => setPicked(e.target.value === today ? '' : e.target.value)}
+                aria-label="เลือกวันที่"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </label>
           </div>
         </div>
 
-        <h2 className="font-bold text-sm mt-2 mb-2 text-ink">ส่ง / รับคืน ({timeline.length})</h2>
+        <h2 className="font-bold text-sm mt-2 mb-2 text-ink">
+          ส่ง / รับคืน{which !== 'today' && ` · ${weekdayLabel(`${day}T12:00:00+07:00`)}`} ({timeline.length})
+        </h2>
         {timeline.length === 0 ? (
           <p className="glass rounded-xl py-6 text-center text-sm text-gray-600">ไม่มีคิวส่งหรือรับคืน</p>
         ) : (
@@ -163,7 +187,7 @@ function TimelineLine({ b, kind, done }: { b: Booking; kind: 'out' | 'back'; don
   let text: string
   if (kind === 'out') {
     text = prov
-      ? `ส่งพัสดุวันนี้ (ถึงมือ ${dayLabel(b.pickupDatetime)})`
+      ? `ร้านส่งพัสดุ (ถึงมือ ${dayLabel(b.pickupDatetime)})`
       : `ส่ง ${timeOf(b.pickupDatetime)} · ${b.pickupType === 'delivery' ? `Delivery → ${b.pickupAddress}` : 'ลูกค้ามารับเอง'}`
   } else {
     text = prov

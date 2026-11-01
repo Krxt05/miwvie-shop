@@ -116,9 +116,10 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-600 tabular-nums truncate">{when}</p>
           <p className="text-sm mt-0.5 flex items-baseline gap-1.5 min-w-0">
-            <span className="font-semibold truncate shrink">{String(b.customerName)}</span>
+            {/* The real name keeps its room; a long chat name is the one cut short */}
+            <span className="font-semibold truncate shrink-0 max-w-[70%]">{String(b.customerName)}</span>
             {contactHandle(b) && (
-              <span className="text-xs text-gray-600 truncate shrink-[2]">· {contactHandle(b)}</span>
+              <span className="text-xs text-gray-600 truncate min-w-0">· {contactHandle(b)}</span>
             )}
           </p>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -390,13 +391,12 @@ function MessageSheet({ b, reviewCode, onClose }: { b: Booking; reviewCode: stri
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-ink/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/40 p-4" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="ข้อความถึงลูกค้า"
-        className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl bg-white p-4 text-left"
-        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+        className="w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-2xl bg-white p-4 text-left shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
