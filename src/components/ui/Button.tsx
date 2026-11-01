@@ -31,15 +31,15 @@ export default function Button({
       onClick={onClick}
       disabled={disabled || loading}
       className={clsx(
-        'relative inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 select-none',
+        'relative inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-colors duration-200 select-none',
         fullWidth && 'w-full',
-        size === 'sm' && 'px-4 py-2 text-sm',
+        size === 'sm' && 'px-4 py-2 min-h-11 text-sm',
         size === 'md' && 'px-6 py-3 text-base',
         size === 'lg' && 'px-8 py-4 text-lg',
         variant === 'primary' && [
           'bg-pink text-white',
-          'hover:bg-pink-light hover:shadow-pink-glow',
-          'active:scale-95',
+          'hover:bg-pink-light',
+          'active:bg-pink-600',
           'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none',
         ],
         variant === 'outline' && [

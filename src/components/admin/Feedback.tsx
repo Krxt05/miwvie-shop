@@ -1,5 +1,5 @@
 'use client'
-import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 
@@ -7,11 +7,12 @@ import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 // place on the phone and freeze browser automation for the whole tab.
 
 type ToastKind = 'success' | 'error'
-interface Toast { id: number; kind: ToastKind; text: string }
+interface ToastAction { label: string; onClick: () => void }
+interface Toast { id: number; kind: ToastKind; text: string; action?: ToastAction }
 interface ConfirmOptions { title: string; body?: string; confirmLabel?: string; danger?: boolean }
 
 interface FeedbackApi {
-  toast: (text: string, kind?: ToastKind) => void
+  toast: (text: string, kind?: ToastKind, action?: ToastAction) => void
   confirm: (opts: ConfirmOptions) => Promise<boolean>
 }
 
@@ -29,10 +30,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const resolver = useRef<((ok: boolean) => void) | null>(null)
   const nextId = useRef(1)
 
-  const toast = useCallback((text: string, kind: ToastKind = 'success') => {
+  const toast = useCallback((text: string, kind: ToastKind = 'success', action?: ToastAction) => {
     const id = nextId.current++
-    setToasts((prev) => [...prev, { id, kind, text }])
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), kind === 'error' ? 6000 : 3000)
+    setToasts((prev) => [...prev, { id, kind, text, action }])
+    // A toast with an undo button stays long enough to reach for it
+    const ms = action ? 7000 : kind === 'error' ? 6000 : 3000
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), ms)
   }, [])
 
   const confirm = useCallback((opts: ConfirmOptions) => {
@@ -50,12 +53,23 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     setDialog(null)
   }
 
+  // Escape dismisses the dialog (answers "no")
+  useEffect(() => {
+    if (!dialog) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dialog])
+
   return (
     <FeedbackContext.Provider value={value}>
       {children}
 
       {/* Toasts sit above the mobile tab bar */}
-      <div className="fixed inset-x-0 bottom-20 md:bottom-6 z-[60] flex flex-col items-center gap-2 px-4 pointer-events-none">
+      <div
+        className="fixed inset-x-0 md:!bottom-6 z-[60] flex flex-col items-center gap-2 px-4 pointer-events-none"
+        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+      >
         <AnimatePresence>
           {toasts.map((t) => (
             <motion.div
@@ -71,7 +85,15 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               role="status"
             >
               {t.kind === 'error' ? <XCircle size={16} className="shrink-0 mt-0.5" /> : <CheckCircle size={16} className="shrink-0 mt-0.5" />}
-              <span>{t.text}</span>
+              <span className="flex-1">{t.text}</span>
+              {t.action && (
+                <button
+                  onClick={() => { t.action!.onClick(); setToasts((prev) => prev.filter((x) => x.id !== t.id)) }}
+                  className="shrink-0 -my-1 min-h-9 px-3 rounded-lg font-semibold text-pink hover:bg-pink-50"
+                >
+                  {t.action.label}
+                </button>
+              )}
             </motion.div>
           ))}
         </AnimatePresence>
@@ -109,14 +131,15 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               <div className="flex gap-2 mt-5">
                 <button
                   onClick={() => close(false)}
-                  className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium hover:bg-gray-50"
+                  autoFocus={dialog.danger}
+                  className="flex-1 min-h-11 rounded-xl border border-gray-200 py-2.5 text-sm font-medium hover:bg-gray-50"
                 >
                   ไม่ใช่
                 </button>
                 <button
                   onClick={() => close(true)}
-                  autoFocus
-                  className={`flex-1 rounded-xl py-2.5 text-sm font-medium text-white ${
+                  autoFocus={!dialog.danger}
+                  className={`flex-1 min-h-11 rounded-xl py-2.5 text-sm font-medium text-white ${
                     dialog.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-pink hover:bg-pink-light'
                   }`}
                 >

@@ -17,6 +17,7 @@ const BOOKING_HEADERS = [
   'access_token', 'request_key',
   'contact_channel',
   'paid_at', // when the admin pressed "ยืนยันรับเงิน" — the day money reached the account
+  'picked_up_at', // when the admin pressed "ส่งกล้องแล้ว" — the 24h rental clock starts here
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for
@@ -28,7 +29,7 @@ const MIN_PROVINCIAL_DURATION_HOURS = 72
 // constant above in case the two ever need to diverge.
 const PROVINCIAL_SHIP_LEAD_DAYS = 3
 
-const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity']
+const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity', 'request_key']
 const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
 
 const CAMERA_NAMES = {
@@ -354,16 +355,57 @@ function handleGet(p) {
 
 // ── POST handlers ───────────────────────────────────────────
 
+// Writes that change what the admin list shows. After one succeeds the data
+// version moves, so open admin phones know to reload (getAdminVersion).
+const DATA_WRITE_ACTIONS = {
+  createBooking: 1, attachImages: 1, updateBookingStatus: 1, updateAdminNotes: 1,
+  deleteBooking: 1, blockDates: 1, deleteBlockedSlot: 1, generateDiscountCode: 1,
+}
+
 function handlePost(body) {
+  const result = handlePostAction(body)
+  if (DATA_WRITE_ACTIONS[body.action] && result && !result.error) bumpDataVersion_()
+  return result
+}
+
+function bumpDataVersion_() {
+  PropertiesService.getScriptProperties().setProperty('DATA_VERSION', String(Date.now()))
+}
+
+// Cheap poll for admin phones: one property read instead of the whole sheet.
+function getAdminVersion(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  return { version: PropertiesService.getScriptProperties().getProperty('DATA_VERSION') || '0' }
+}
+
+// Every admin write takes the same script lock createBooking uses, so two
+// phones (or a phone and a customer booking) can't interleave row edits.
+function withScriptLock_(fn) {
+  const lock = LockService.getScriptLock()
+  try {
+    lock.waitLock(20000)
+  } catch (e) {
+    return { error: 'ระบบกำลังยุ่ง กรุณาลองอีกครั้ง' }
+  }
+  try {
+    return fn()
+  } finally {
+    lock.releaseLock()
+  }
+}
+
+function handlePostAction(body) {
   switch (body.action) {
     case 'createBooking':        return createBooking(body)
     case 'getBooking':           return getBookingById(body.id, body.token)
     case 'attachImages':         return attachImages(body.bookingId, body.idCardImage, body.igProfileImage, body.token)
     case 'getAdminBookings':     return getAdminBookings(body.pin)
-    case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin)
+    case 'updateBookingStatus':  return updateBookingStatus(body.bookingId, body.status, body.pin, body.expectedStatus)
+    case 'getAdminVersion':      return getAdminVersion(body.pin)
     case 'updateAdminNotes':     return updateAdminNotes(body.bookingId, body.notes, body.pin)
     case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
-    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity)
+    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity, body.requestKey)
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
@@ -759,6 +801,7 @@ function createBooking(data) {
       access_token: accessToken,
       request_key: requestKey,
       paid_at: '',
+      picked_up_at: '',
     }
     const rowArr = header.map(function (name) {
       return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''
@@ -1242,61 +1285,98 @@ function listTriggers(pin) {
   }
 }
 
-function updateBookingStatus(bookingId, status, pin) {
+// Which status may follow which. The admin UI only offers forward steps plus a
+// one-step undo; anything else (a typo, a stale phone, a hand-made request) is
+// refused here instead of being written to the sheet.
+const STATUS_TRANSITIONS = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['active', 'returned', 'cancelled', 'pending'], // pending = undo "ยืนยันรับเงิน"
+  active: ['returned', 'cancelled', 'confirmed'],            // confirmed = undo "ส่งกล้องแล้ว"
+  returned: ['active', 'confirmed'],                          // undo "รับคืนแล้ว" (to wherever it was)
+  cancelled: [],
+}
+
+function updateBookingStatus(bookingId, status, pin, expectedStatus) {
   const authErr = checkPin(pin)
   if (authErr) return authErr
+  if (!STATUS_TRANSITIONS.hasOwnProperty(status)) return { error: 'สถานะไม่ถูกต้อง' }
 
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
 
-  ensureColumns(sheet, BOOKING_HEADERS) // guarantee the returned_at column exists
+  ensureColumns(sheet, BOOKING_HEADERS) // guarantee the timestamp columns exist
 
-  const data = sheet.getDataRange().getValues()
-  const h = data[0]
-  const iId = h.indexOf('booking_id')
-  const iStatus = h.indexOf('booking_status')
-  const iPayment = h.indexOf('payment_status')
-  const iReturnedAt = h.indexOf('returned_at')
-  const iPaidAt = h.indexOf('paid_at')
+  return withScriptLock_(function () {
+    const data = sheet.getDataRange().getValues()
+    const h = data[0]
+    const col = function (name) { return h.indexOf(name) }
+    const iId = col('booking_id')
+    const iStatus = col('booking_status')
+    const iPayment = col('payment_status')
+    const iReturnedAt = col('returned_at')
+    const iPaidAt = col('paid_at')
+    const iPickedUpAt = col('picked_up_at')
 
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][iId]) !== String(bookingId)) continue
-    sheet.getRange(i + 1, iStatus + 1).setValue(status)
-    if (status === 'confirmed') {
-      sheet.getRange(i + 1, iPayment + 1).setValue('confirmed').setBackground('#d1fae5')
-      // First confirmation only, so walking a status back and forth never moves
-      // the day the money came in (the revenue tab reconciles against the bank).
-      if (iPaidAt >= 0 && !data[i][iPaidAt]) {
-        sheet.getRange(i + 1, iPaidAt + 1).setValue(new Date().toISOString())
+    const rowObject = function (r) {
+      const saved = sheet.getRange(r + 1, 1, 1, h.length).getValues()[0]
+      const booking = {}
+      h.forEach(function (name, j) { if (name) booking[name] = saved[j] })
+      return booking
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(bookingId)) continue
+      const current = String(data[i][iStatus] || 'pending')
+
+      // Retried request whose first attempt already landed — nothing to do.
+      if (current === status) return { success: true, booking: rowObject(i) }
+
+      // The phone acted on an old copy of this booking (the other owner changed
+      // it meanwhile). Hand back the fresh row instead of overwriting.
+      if (expectedStatus && current !== String(expectedStatus)) {
+        return { error: 'STALE', message: 'มีคนแก้ใบจองนี้ไปแล้ว', booking: rowObject(i) }
       }
-    }
-    if (status === 'cancelled') {
-      sheet.getRange(i + 1, iStatus + 1).setBackground('#fee2e2')
-    }
-    if (status === 'returned') {
-      sheet.getRange(i + 1, iStatus + 1).setBackground('#ede9fe')
-      // Timestamp the moment the unit is physically back — readBookingSlotsAll
-      // uses this to free the queue right away instead of waiting out the buffer.
-      if (iReturnedAt >= 0) {
-        sheet.getRange(i + 1, iReturnedAt + 1).setValue(new Date().toISOString())
+      if ((STATUS_TRANSITIONS[current] || []).indexOf(status) === -1) {
+        return { error: 'เปลี่ยนสถานะจาก ' + current + ' เป็น ' + status + ' ไม่ได้', booking: rowObject(i) }
       }
-    } else if (iReturnedAt >= 0 && data[i][iReturnedAt]) {
-      // Admin walked the status back (e.g. returned → active by mistake): clear
-      // the timestamp so the queue doesn't stay free while the unit is still out.
-      sheet.getRange(i + 1, iReturnedAt + 1).setValue('')
+
+      const now = new Date().toISOString()
+      const set = function (c, v) { if (c >= 0) sheet.getRange(i + 1, c + 1).setValue(v) }
+      set(iStatus, status)
+
+      if (status === 'confirmed' && current === 'pending') {
+        sheet.getRange(i + 1, iPayment + 1).setValue('confirmed').setBackground('#d1fae5')
+        // First confirmation only, so the day the money came in never moves
+        // (the revenue tab reconciles against the bank).
+        if (iPaidAt >= 0 && !data[i][iPaidAt]) set(iPaidAt, now)
+      }
+      if (status === 'pending' && current === 'confirmed') {
+        // Undo of a mistaken "ยืนยันรับเงิน"
+        sheet.getRange(i + 1, iPayment + 1).setValue('pending').setBackground(null)
+        set(iPaidAt, '')
+      }
+      if (status === 'active' && current === 'confirmed') set(iPickedUpAt, now)
+      if (status === 'confirmed' && current === 'active') set(iPickedUpAt, '')
+
+      if (status === 'cancelled') sheet.getRange(i + 1, iStatus + 1).setBackground('#fee2e2')
+      else sheet.getRange(i + 1, iStatus + 1).setBackground(status === 'returned' ? '#ede9fe' : null)
+
+      if (status === 'returned') {
+        // The moment the unit is physically back — readBookingSlotsAll uses this
+        // to free the queue right away instead of waiting out the buffer.
+        set(iReturnedAt, now)
+      } else if (iReturnedAt >= 0 && data[i][iReturnedAt]) {
+        // Walked back from returned: the unit is out again, keep the queue blocked.
+        set(iReturnedAt, '')
+      }
+      SpreadsheetApp.flush()
+
+      // The row as saved, so the admin list picks up the new timestamps too.
+      return { success: true, booking: rowObject(i) }
     }
-    SpreadsheetApp.flush()
 
-    // Return the row as saved. The admin UI used to patch only the status in its
-    // local state, so returned_at stayed stale and the heatmap kept a returned
-    // provincial unit blocked for its full 3-day tail until a manual refresh.
-    const saved = sheet.getRange(i + 1, 1, 1, h.length).getValues()[0]
-    const booking = {}
-    h.forEach(function (name, j) { if (name) booking[name] = saved[j] })
-    return { success: true, booking: booking }
-  }
-
-  return { error: 'Booking not found' }
+    return { error: 'Booking not found' }
+  })
 }
 
 // Free-text note the shop keeps per booking (e.g. "กล้องมีรอยตอนรับคืน").
@@ -1316,13 +1396,15 @@ function updateAdminNotes(bookingId, notes, pin) {
   const iNotes = h.indexOf('admin_notes')
   if (iNotes < 0) return { error: 'admin_notes column not found' }
 
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][iId]) !== String(bookingId)) continue
-    sheet.getRange(i + 1, iNotes + 1).setValue(text)
-    return { success: true, notes: text }
-  }
-
-  return { error: 'Booking not found' }
+  return withScriptLock_(function () {
+    const fresh = sheet.getRange(1, iId + 1, sheet.getLastRow(), 1).getValues()
+    for (let i = 1; i < fresh.length; i++) {
+      if (String(fresh[i][0]) !== String(bookingId)) continue
+      sheet.getRange(i + 1, iNotes + 1).setValue(text)
+      return { success: true, notes: text }
+    }
+    return { error: 'Booking not found' }
+  })
 }
 
 function deleteBooking(bookingId, pin) {
@@ -1332,18 +1414,21 @@ function deleteBooking(bookingId, pin) {
   const sheet = getSpreadsheet().getSheetByName('bookings')
   if (!sheet) return { error: 'Sheet not found' }
 
-  const data = sheet.getDataRange().getValues()
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(bookingId)) {
-      sheet.deleteRow(i + 1)
-      return { success: true }
+  // Find and delete inside the lock: a row deleted or appended in between
+  // would otherwise shift the index and remove the wrong booking.
+  return withScriptLock_(function () {
+    const data = sheet.getDataRange().getValues()
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(bookingId)) {
+        sheet.deleteRow(i + 1)
+        return { success: true }
+      }
     }
-  }
-
-  return { error: 'Booking not found' }
+    return { error: 'Booking not found' }
+  })
 }
 
-function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
+function blockDates(cameraId, start, end, reason, pin, requestedQuantity, requestKey) {
   const authErr = checkPin(pin)
   if (authErr) return authErr
 
@@ -1369,8 +1454,23 @@ function blockDates(cameraId, start, end, reason, pin, requestedQuantity) {
     return { error: 'ระบบกำลังยุ่ง กรุณาลองอีกครั้ง' }
   }
   try {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    const key = String(requestKey || '').slice(0, 64)
+    const iKey = header.indexOf('request_key')
+    // A retry after a timeout that actually went through returns the same block
+    // instead of adding a second one.
+    if (key && iKey >= 0 && sheet.getLastRow() > 1) {
+      const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues()
+      for (let r = 0; r < rows.length; r++) {
+        if (String(rows[r][iKey]) === key) return { success: true, id: rows[r][0], replayed: true }
+      }
+    }
     const id = 'BLK-' + Date.now()
-    sheet.appendRow([id, cameraId, start, end, reason || '', new Date().toISOString(), quantity])
+    const values = {
+      id: id, camera_id: cameraId, start_datetime: start, end_datetime: end, reason: reason || '',
+      created_at: new Date().toISOString(), quantity: quantity, request_key: key,
+    }
+    sheet.appendRow(header.map(function (name) { return values.hasOwnProperty(name) ? values[name] : '' }))
     SpreadsheetApp.flush()
     return { success: true, id }
   } finally {
@@ -1416,15 +1516,16 @@ function deleteBlockedSlot(id, pin) {
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
 
-  const data = sheet.getDataRange().getValues()
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      sheet.deleteRow(i + 1)
-      return { success: true }
+  return withScriptLock_(function () {
+    const data = sheet.getDataRange().getValues()
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(id)) {
+        sheet.deleteRow(i + 1)
+        return { success: true }
+      }
     }
-  }
-
-  return { error: 'Not found' }
+    return { error: 'Not found' }
+  })
 }
 
 // ── Discount codes ───────────────────────────────────────────
@@ -1442,6 +1543,12 @@ function generateDiscountCode(bookingId, pin) {
     sheet.setFrozenRows(1)
   }
 
+  // Check-then-append under the lock, or two phones pressing at once each get
+  // their own "only" code for the same booking.
+  return withScriptLock_(function () { return issueDiscountCode_(sheet, bookingId) })
+}
+
+function issueDiscountCode_(sheet, bookingId) {
   // Return existing active code for this booking
   if (sheet.getLastRow() > 1) {
     const data = sheet.getDataRange().getValues()

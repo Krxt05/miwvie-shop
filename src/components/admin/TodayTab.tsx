@@ -1,146 +1,181 @@
 'use client'
-import { useState } from 'react'
-import { format } from 'date-fns'
-import { th } from 'date-fns/locale'
-import { Package, RotateCcw, AlertTriangle, Clock, CheckCircle } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle, Wallet, PackageX } from 'lucide-react'
 import { Booking, BookingStatus } from '@/types'
-import { bangkokDay, handoverDay, returnDay, shiftDay, isOverdue, timeOf } from '@/lib/admin'
+import {
+  CustomerInfo, agoLabel, bangkokDay, dayLabel, dayTimeLabel, dueBack, handoverDay, isNotHandedOver,
+  isOverdue, returnDay, shiftDay, timeOf, weekdayLabel,
+} from '@/lib/admin'
 import BookingCard, { AdminActions } from './BookingCard'
 
 interface Props {
   bookings: Booking[]
   expanded: string | null
-  setExpanded: (id: string | null) => void
+  onToggle: (id: string) => void
   actions: AdminActions
+  customerOf: (b: Booking) => CustomerInfo
   onJumpToStatus: (status: BookingStatus) => void
 }
 
-export default function TodayTab({ bookings, expanded, setExpanded, actions, onJumpToStatus }: Props) {
+// Work queue, most urgent first: late cameras → paid but never handed over →
+// payments to check → the day's handovers and returns in time order.
+export default function TodayTab({ bookings, expanded, onToggle, actions, customerOf, onJumpToStatus }: Props) {
   const [which, setWhich] = useState<'today' | 'tomorrow'>('today')
   const today = bangkokDay(Date.now())
   const day = which === 'today' ? today : shiftDay(today, 1)
 
-  const live = bookings.filter((b) => b.bookingStatus !== 'cancelled')
-  const byTime = (get: (b: Booking) => string) => (a: Booking, b: Booking) =>
-    new Date(get(a)).getTime() - new Date(get(b)).getTime()
+  const { overdue, notHandedOver, pending, timeline, counts } = useMemo(() => {
+    const live = bookings.filter((b) => b.bookingStatus !== 'cancelled')
+    const ms = (v: string | Date) => new Date(String(v)).getTime()
 
-  const handovers = live
-    .filter((b) => handoverDay(b) === day)
-    .sort(byTime((b) => String(b.pickupDatetime)))
-  const returns = live
-    .filter((b) => returnDay(b) === day)
-    .sort(byTime((b) => String(b.returnDatetime)))
-  const overdue = bookings.filter((b) => isOverdue(b))
+    // One card per booking. A same-day rental (out and back on this day) is
+    // listed at its next step: the handover until it's out, then the return.
+    type Item = { b: Booking; out: boolean; back: boolean; at: number; done: boolean }
+    const items: Item[] = []
+    for (const b of live) {
+      if (b.bookingStatus === 'pending') continue // shown in the payments box until paid
+      const out = handoverDay(b) === day
+      const back = returnDay(b) === day
+      if (!out && !back) continue
+      const handedOver = b.bookingStatus === 'active' || b.bookingStatus === 'returned'
+      const outAt = b.rentalArea === 'provincial' ? ms(b.pickupDatetime) - 1 : ms(b.pickupDatetime)
+      const nextIsReturn = back && (handedOver || !out)
+      items.push({
+        b, out, back,
+        at: nextIsReturn ? dueBack(b) : outAt,
+        done: back ? b.bookingStatus === 'returned' : handedOver,
+      })
+    }
+    // Still to do, by time; finished ones sink to the bottom
+    items.sort((x, y) => Number(x.done) - Number(y.done) || x.at - y.at)
 
-  const count = (s: BookingStatus) => bookings.filter((b) => b.bookingStatus === s).length
-  const stats: { status: BookingStatus; label: string; color: string }[] = [
-    { status: 'pending', label: 'รอยืนยันเงิน', color: 'text-amber-600' },
-    { status: 'confirmed', label: 'ยืนยันแล้ว', color: 'text-blue-600' },
-    { status: 'active', label: 'กำลังเช่า', color: 'text-emerald-600' },
-  ]
+    const count = (s: BookingStatus) => bookings.filter((b) => b.bookingStatus === s).length
+    return {
+      overdue: bookings.filter((b) => isOverdue(b)).sort((a, b) => dueBack(a) - dueBack(b)),
+      notHandedOver: bookings.filter((b) => isNotHandedOver(b)),
+      pending: bookings.filter((b) => b.bookingStatus === 'pending').sort((a, b) => ms(a.createdAt) - ms(b.createdAt)),
+      timeline: items,
+      counts: { confirmed: count('confirmed'), active: count('active') },
+    }
+  }, [bookings, day])
 
-  const card = (b: Booking, context: React.ReactNode) => (
+  const card = (b: Booking, context: React.ReactNode, key = b.bookingId) => (
     <BookingCard
-      key={b.bookingId}
+      key={key}
       b={b}
       expanded={expanded === b.bookingId}
-      onToggle={() => setExpanded(expanded === b.bookingId ? null : b.bookingId)}
+      onToggle={onToggle}
       actions={actions}
+      customer={customerOf(b)}
       context={context}
     />
   )
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        {stats.map((s) => (
-          <button
-            key={s.status}
-            onClick={() => onJumpToStatus(s.status)}
-            className="glass rounded-xl p-3 sm:p-4 text-left hover:bg-pink-50 transition-colors"
-          >
-            <p className={`text-2xl font-bold ${s.color}`}>{count(s.status)}</p>
-            <p className="text-gray-500 text-xs mt-1">{s.label}</p>
-          </button>
-        ))}
-      </div>
-
+    <div className="space-y-6">
       {overdue.length > 0 && (
         <section>
-          <SectionTitle icon={AlertTriangle} tone="text-red-600" title={`เลยกำหนดคืน (${overdue.length})`} hint="ยังไม่ได้กดรับคืน ทั้งที่เลยเวลาคืนแล้ว" />
+          <SectionTitle icon={AlertTriangle} tone="text-red-700" title={`เลยกำหนดคืน (${overdue.length})`} hint="ส่งกล้องไปแล้ว เลยเวลาคืน ยังไม่ได้กดรับคืน" />
           <div className="space-y-2">
             {overdue.map((b) => card(b, (
-              <span className="text-red-600">
-                ควรคืน {format(new Date(String(b.returnDatetime)), 'd MMM HH:mm', { locale: th })}
-              </span>
+              <span className="text-red-700 font-medium">ควรคืน {dayTimeLabel(dueBack(b))} · เลยมา {agoLabel(dueBack(b))}</span>
             )))}
           </div>
         </section>
       )}
 
-      <div className="inline-flex rounded-xl glass p-1" role="tablist" aria-label="เลือกวัน">
-        {(['today', 'tomorrow'] as const).map((w) => (
-          <button
-            key={w}
-            role="tab"
-            aria-selected={which === w}
-            onClick={() => setWhich(w)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              which === w ? 'bg-pink text-white' : 'text-gray-500 hover:text-pink'
-            }`}
-          >
-            {w === 'today' ? 'วันนี้' : 'พรุ่งนี้'}
-            <span className="ml-1.5 text-xs opacity-80">
-              {format(new Date(`${w === 'today' ? today : shiftDay(today, 1)}T12:00:00+07:00`), 'd MMM', { locale: th })}
-            </span>
-          </button>
-        ))}
+      {notHandedOver.length > 0 && (
+        <section>
+          <SectionTitle icon={PackageX} tone="text-[#6F5220]" title={`ยังไม่ได้กดส่งกล้อง (${notHandedOver.length})`} hint="เลยเวลารับแล้ว — ลูกค้าไม่มารับ หรือลืมกด “ส่งกล้องแล้ว”" />
+          <div className="space-y-2">
+            {notHandedOver.map((b) => card(b, (
+              <span className="text-[#6F5220]">นัดรับ {b.rentalArea === 'provincial' ? dayLabel(b.pickupDatetime) : dayTimeLabel(b.pickupDatetime)}</span>
+            )))}
+          </div>
+        </section>
+      )}
+
+      {pending.length > 0 && (
+        <section>
+          <SectionTitle icon={Wallet} tone="text-[#6F5220]" title={`รอยืนยันเงิน (${pending.length})`} hint="เช็กสลิปในแชท แล้วกดยืนยัน — ใบจองที่ค้างยังกันคิวไว้" />
+          <div className="space-y-2">
+            {pending.map((b) => card(b, (
+              <span className="text-gray-600">จองมา {agoLabel(b.createdAt)}</span>
+            )))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-gradient-dark">
+          <div className="grid grid-cols-2 rounded-xl glass p-1" role="tablist" aria-label="เลือกวัน">
+            {(['today', 'tomorrow'] as const).map((w) => (
+              <button
+                key={w}
+                role="tab"
+                aria-selected={which === w}
+                onClick={() => setWhich(w)}
+                className={`min-h-11 rounded-lg text-sm font-medium transition-colors ${
+                  which === w ? 'bg-pink text-white' : 'text-gray-600'
+                }`}
+              >
+                {w === 'today' ? 'วันนี้' : 'พรุ่งนี้'}
+                <span className="ml-1.5 text-xs opacity-80">{weekdayLabel(`${w === 'today' ? today : shiftDay(today, 1)}T12:00:00+07:00`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <h2 className="font-bold text-sm mt-2 mb-2 text-ink">ส่ง / รับคืน ({timeline.length})</h2>
+        {timeline.length === 0 ? (
+          <p className="glass rounded-xl py-6 text-center text-sm text-gray-600">ไม่มีคิวส่งหรือรับคืน</p>
+        ) : (
+          <div className="space-y-2">
+            {timeline.map(({ b, out, back, done }) => (
+              <div key={b.bookingId} className={done ? 'opacity-70' : ''}>
+                {card(b, (
+                  <span className="flex flex-col gap-0.5">
+                    {out && <TimelineLine b={b} kind="out" done={b.bookingStatus === 'active' || b.bookingStatus === 'returned'} />}
+                    {back && <TimelineLine b={b} kind="back" done={b.bookingStatus === 'returned'} />}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="flex gap-2 text-xs">
+        <button onClick={() => onJumpToStatus('confirmed')} className="flex-1 min-h-11 glass rounded-xl px-3 text-left">
+          <b className="text-ink text-sm tabular-nums">{counts.confirmed}</b> <span className="text-gray-600">ยืนยันแล้ว รอส่ง</span>
+        </button>
+        <button onClick={() => onJumpToStatus('active')} className="flex-1 min-h-11 glass rounded-xl px-3 text-left">
+          <b className="text-ink text-sm tabular-nums">{counts.active}</b> <span className="text-gray-600">กำลังเช่า</span>
+        </button>
       </div>
-
-      <section>
-        <SectionTitle icon={Package} tone="text-pink" title={`ส่งกล้อง / ลูกค้ามารับ (${handovers.length})`} />
-        {handovers.length === 0 ? (
-          <Empty text="ไม่มีคิวส่งกล้อง" />
-        ) : (
-          <div className="space-y-2">
-            {handovers.map((b) => {
-              const done = b.bookingStatus === 'active' || b.bookingStatus === 'returned'
-              return card(b, (
-                <span className={`flex items-center gap-1 ${done ? 'text-emerald-700' : 'text-ink'}`}>
-                  {done ? <CheckCircle size={12} /> : <Clock size={12} />}
-                  {b.rentalArea === 'provincial'
-                    ? `ส่งพัสดุ (ถึงมือ ${format(new Date(String(b.pickupDatetime)), 'd MMM', { locale: th })})`
-                    : `${timeOf(b.pickupDatetime)} · ${b.pickupType === 'delivery' ? `Delivery → ${b.pickupAddress}` : 'รับเอง'}`}
-                  {done && ' · ส่งแล้ว'}
-                </span>
-              ))
-            })}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <SectionTitle icon={RotateCcw} tone="text-pink" title={`รับคืน (${returns.length})`} />
-        {returns.length === 0 ? (
-          <Empty text="ไม่มีคิวรับคืน" />
-        ) : (
-          <div className="space-y-2">
-            {returns.map((b) => {
-              const done = b.bookingStatus === 'returned'
-              return card(b, (
-                <span className={`flex items-center gap-1 ${done ? 'text-emerald-700' : 'text-ink'}`}>
-                  {done ? <CheckCircle size={12} /> : <Clock size={12} />}
-                  {b.rentalArea === 'provincial'
-                    ? 'ลูกค้าส่งพัสดุคืน (ก่อน 12:00)'
-                    : `${timeOf(b.returnDatetime)} · ${b.returnType === 'delivery' ? `ให้ร้านรับ${b.returnAddress ? ` → ${b.returnAddress}` : ''}` : 'คืนเอง'}`}
-                  {done && ' · คืนแล้ว'}
-                </span>
-              ))
-            })}
-          </div>
-        )}
-      </section>
     </div>
+  )
+}
+
+function TimelineLine({ b, kind, done }: { b: Booking; kind: 'out' | 'back'; done: boolean }) {
+  const prov = b.rentalArea === 'provincial'
+  const Icon = done ? CheckCircle : kind === 'out' ? ArrowUpRight : ArrowDownLeft
+  let text: string
+  if (kind === 'out') {
+    text = prov
+      ? `ส่งพัสดุวันนี้ (ถึงมือ ${dayLabel(b.pickupDatetime)})`
+      : `ส่ง ${timeOf(b.pickupDatetime)} · ${b.pickupType === 'delivery' ? `Delivery → ${b.pickupAddress}` : 'ลูกค้ามารับเอง'}`
+  } else {
+    text = prov
+      ? 'ลูกค้าส่งพัสดุคืน (ก่อน 12:00)'
+      : `คืน ${timeOf(new Date(dueBack(b)))} · ${b.returnType === 'delivery' ? `ร้านไปรับ${b.returnAddress ? ` → ${b.returnAddress}` : ''}` : 'คืนเอง'}`
+  }
+  return (
+    <span className={`flex items-center gap-1 font-medium ${done ? 'text-emerald-700' : kind === 'out' ? 'text-pink-700' : 'text-ink'}`}>
+      <Icon size={13} className="shrink-0" />
+      {text}
+      {done && (kind === 'out' ? ' · ส่งแล้ว' : ' · คืนแล้ว')}
+    </span>
   )
 }
 
@@ -150,11 +185,7 @@ function SectionTitle({ icon: Icon, tone, title, hint }: { icon: React.ElementTy
       <h2 className={`font-bold text-sm flex items-center gap-1.5 ${tone}`}>
         <Icon size={15} /> {title}
       </h2>
-      {hint && <p className="text-xs text-gray-500 mt-0.5">{hint}</p>}
+      {hint && <p className="text-xs text-gray-600 mt-0.5">{hint}</p>}
     </div>
   )
-}
-
-function Empty({ text }: { text: string }) {
-  return <p className="glass rounded-xl py-6 text-center text-sm text-gray-400">{text}</p>
 }

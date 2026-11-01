@@ -8,7 +8,7 @@
 import { Booking, CameraId } from '@/types'
 import { BlockedSlot } from '@/lib/api'
 import { BATTERY_CHARGE_BUFFER_MS, CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
-import { bangkokDay, bangkokMonth, isPaid } from '@/lib/admin'
+import { bangkokDay, bangkokMonth, customerKey, isPaid } from '@/lib/admin'
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
@@ -249,15 +249,6 @@ export function cameraRows(
 }
 
 // ---------- secondary metrics ----------
-
-// Phones lost their leading 0 in older sheet rows; compare digits only.
-function customerKey(b: Booking): string {
-  let phone = String(b.customerPhone || '').replace(/\D/g, '')
-  if (phone.length === 9 && !phone.startsWith('0')) phone = `0${phone}`
-  if (phone.length >= 9) return `p:${phone}`
-  const ig = String(b.customerIG || '').trim().toLowerCase().replace(/^@/, '')
-  return ig ? `ig:${ig}` : ''
-}
 
 export function insights(bookings: Booking[], p: Period) {
   const paid = bookings.filter(isPaid)

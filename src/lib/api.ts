@@ -37,6 +37,7 @@ function mapBooking(r: Record<string, any>): Booking {
     discountAmount: Number(r.discount_amount) || 0,
     returnedAt:     r.returned_at ? String(r.returned_at) : undefined,
     paidAt:         r.paid_at ? String(r.paid_at) : undefined,
+    pickedUpAt:     r.picked_up_at ? String(r.picked_up_at) : undefined,
     accessToken:    r.access_token ? String(r.access_token) : undefined,
   }
 }
@@ -264,10 +265,28 @@ export async function getBooking(
   return { booking: mapBooking(data.booking), limited: Boolean(data.limited) }
 }
 
+// Only a rejected PIN means "sign in again". Apps Script wraps timeouts and
+// quota errors as {error} on HTTP 200 too, and treating those as a bad PIN used
+// to log the owner out whenever the backend hiccupped.
+const BAD_PIN = 'Invalid PIN'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adminError(data: any): ApiError {
+  return new ApiError('UPSTREAM', String(data.error || 'โหลดข้อมูลไม่สำเร็จ'), true, 200)
+}
+
 export async function getAdminBookings(pin: string): Promise<Booking[] | null> {
   const data = await post({ action: 'getAdminBookings', pin })
-  if (data.error) return null
+  if (data.error === BAD_PIN) return null
+  if (data.error) throw adminError(data)
   return (data.bookings ?? []).map(mapBooking)
+}
+
+// Moves whenever anything the admin list shows was written. null = bad PIN.
+export async function getAdminVersion(pin: string): Promise<string | null> {
+  const data = await post({ action: 'getAdminVersion', pin })
+  if (data.error === BAD_PIN) return null
+  if (data.error) throw adminError(data)
+  return String(data.version ?? '0')
 }
 
 export async function validateDiscountCode(code: string): Promise<{ valid: boolean; error?: string; discount?: number }> {
@@ -279,13 +298,21 @@ export async function generateDiscountCode(bookingId: string, pin: string): Prom
   return post({ action: 'generateDiscountCode', bookingId, pin })
 }
 
+// `expectedStatus` is what this phone believes the booking is now; the server
+// refuses with stale=true (and the fresh row) if the other owner changed it.
 export async function updateBookingStatus(
   bookingId: string,
   status: string,
   pin: string,
-): Promise<{ success?: boolean; error?: string; booking?: Booking }> {
-  const data = await post({ action: 'updateBookingStatus', bookingId, status, pin })
-  return { ...data, booking: data.booking ? mapBooking(data.booking) : undefined }
+  expectedStatus?: string,
+): Promise<{ success?: boolean; error?: string; stale?: boolean; booking?: Booking }> {
+  const data = await post({ action: 'updateBookingStatus', bookingId, status, pin, expectedStatus })
+  return {
+    ...data,
+    stale: data.error === 'STALE',
+    error: data.error === 'STALE' ? data.message : data.error,
+    booking: data.booking ? mapBooking(data.booking) : undefined,
+  }
 }
 
 export async function updateAdminNotes(
@@ -326,6 +353,7 @@ export async function blockDates(
   reason: string,
   pin: string,
   quantity?: number,
+  requestKey?: string,
 ): Promise<{ success?: boolean; id?: string; error?: string }> {
   return post({
     action: 'blockDates',
@@ -335,12 +363,16 @@ export async function blockDates(
     reason,
     pin,
     quantity,
+    requestKey,
   })
 }
 
-export async function listBlockedSlots(pin: string): Promise<BlockedSlot[] | null> {
+export { newRequestKey }
+
+// Throws on failure: an empty list would claim "no blocks" during an outage.
+export async function listBlockedSlots(pin: string): Promise<BlockedSlot[]> {
   const data = await post({ action: 'listBlockedSlots', pin })
-  if (data.error) return null
+  if (data.error) throw adminError(data)
   return (data.slots ?? []).map(mapBlockedSlot)
 }
 

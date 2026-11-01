@@ -8,7 +8,7 @@ interface Props {
 const styles: Record<string, string> = {
   available: 'bg-emerald-50 text-emerald-600 border-emerald-200',
   busy: 'bg-pink-50 text-pink-600 border-pink-200',
-  pending: 'bg-amber-50 text-amber-600 border-amber-200',
+  pending: 'bg-brass-light/30 text-[#6F5220] border-brass/50',
   confirmed: 'bg-blue-50 text-blue-600 border-blue-200',
   active: 'bg-emerald-50 text-emerald-600 border-emerald-200',
   returned: 'bg-gray-100 text-gray-500 border-gray-200',

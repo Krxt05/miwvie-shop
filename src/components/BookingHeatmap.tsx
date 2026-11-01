@@ -48,10 +48,12 @@ const bangkokKey = (value: string | Date): string =>
 const bangkokTime = (date: Date): string => BKK_TIME_FMT.format(date)
 
 interface Tooltip {
-  x: number
-  y: number
+  id: string
   lines: string[]
 }
+
+const MONTH_FMT = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' })
+const DAY_FMT = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' })
 
 interface HeatRow {
   key: string
@@ -148,28 +150,27 @@ export default function BookingHeatmap({ rows }: Props) {
     return result
   }, [rows])
 
-  const showTooltip = (e: React.SyntheticEvent, lines: string[]) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setTooltip({ x: rect.left + rect.width / 2, y: rect.top, lines })
-  }
-  const hideTooltip = () => setTooltip(null)
+  // Tap a cell to pin its details under the grid (hover tooltips don't work on
+  // a phone); tap it again to clear.
+  const pick = (id: string, lines: string[]) =>
+    setTooltip((cur) => (cur?.id === id ? null : { id, lines }))
 
   return (
     <div className="glass rounded-2xl p-4 space-y-3 relative">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-sm">ภาพรวมความว่าง (ทุกรุ่น)</h2>
         <div className="flex items-center gap-1">
-          <button onClick={() => setMonth(subMonths(month, 1))} className="p-2 -m-1 hover:bg-pink-50 rounded-full text-pink">
-            <ChevronLeft size={16} />
+          <button onClick={() => { setMonth(subMonths(month, 1)); setTooltip(null) }} className="w-11 h-11 flex items-center justify-center rounded-full text-pink" aria-label="เดือนก่อน">
+            <ChevronLeft size={18} />
           </button>
-          <span className="text-xs font-medium text-gray-500 w-24 text-center">{format(month, 'MMMM yyyy', { locale: th })}</span>
-          <button onClick={() => setMonth(addMonths(month, 1))} className="p-2 -m-1 hover:bg-pink-50 rounded-full text-pink">
-            <ChevronRight size={16} />
+          <span className="text-xs font-medium text-gray-600 w-28 text-center">{MONTH_FMT.format(month)}</span>
+          <button onClick={() => { setMonth(addMonths(month, 1)); setTooltip(null) }} className="w-11 h-11 flex items-center justify-center rounded-full text-pink" aria-label="เดือนถัดไป">
+            <ChevronRight size={18} />
           </button>
         </div>
       </div>
 
-      <p className="text-[11px] text-gray-400 sm:hidden">← เลื่อนดูซ้าย-ขวาเพื่อดูทั้งเดือน →</p>
+      <p className="text-[11px] text-gray-600">แตะช่องเพื่อดูรายละเอียด · เลื่อนซ้าย-ขวาเพื่อดูทั้งเดือน</p>
 
       <div className="overflow-x-auto">
         <div style={{ minWidth: days.length * 24 + 104 }}>
@@ -179,7 +180,7 @@ export default function BookingHeatmap({ rows }: Props) {
             {days.map((d) => (
               <div
                 key={d.toISOString()}
-                className={`w-6 shrink-0 text-center text-[10px] ${bangkokKey(d) === todayKey ? 'text-pink font-bold' : 'text-gray-400'}`}
+                className={`w-6 shrink-0 text-center text-[10px] ${bangkokKey(d) === todayKey ? 'text-pink font-bold' : 'text-gray-600'}`}
               >
                 {format(d, 'd')}
               </div>
@@ -218,10 +219,12 @@ export default function BookingHeatmap({ rows }: Props) {
                   cellClass += 'bg-emerald-50 '
                 }
                 if (isToday) cellClass += 'ring-2 ring-pink ring-inset z-10 '
+                if (tooltip?.id === `${hr.key}|${key}`) cellClass += 'outline outline-2 outline-ink z-20 '
 
                 const withUnit = (label: string) => (/^\d/.test(label) ? `${label} น.` : label)
+                const cellId = `${hr.key}|${key}`
                 const lines = [
-                  `${hr.label} — ${format(d, 'd MMM yyyy', { locale: th })}`,
+                  `${hr.label} — ${DAY_FMT.format(d)}`,
                   isBusy ? 'ไม่ว่าง' : 'ว่าง',
                 ]
                 if (endTimes) lines.push(`สิ้นสุด: ${endTimes.map(withUnit).join(', ')}`)
@@ -233,10 +236,9 @@ export default function BookingHeatmap({ rows }: Props) {
                     type="button"
                     className={cellClass}
                     style={cellStyle}
-                    onMouseEnter={(e) => showTooltip(e, lines)}
-                    onFocus={(e) => showTooltip(e, lines)}
-                    onMouseLeave={hideTooltip}
-                    onBlur={hideTooltip}
+                    aria-label={lines.join(' · ')}
+                    aria-pressed={tooltip?.id === cellId}
+                    onClick={() => pick(cellId, lines)}
                   />
                 )
               })}
@@ -254,10 +256,7 @@ export default function BookingHeatmap({ rows }: Props) {
       </div>
 
       {tooltip && (
-        <div
-          className="fixed z-50 bg-gray-800 text-white text-[11px] rounded-lg px-2 py-1.5 pointer-events-none shadow-lg -translate-x-1/2 -translate-y-full"
-          style={{ left: tooltip.x, top: tooltip.y - 6 }}
-        >
+        <div className="rounded-xl bg-ink text-white text-xs px-3 py-2" role="status">
           {tooltip.lines.map((line, i) => (
             <div key={i} className={i === 0 ? 'font-semibold' : ''}>{line}</div>
           ))}

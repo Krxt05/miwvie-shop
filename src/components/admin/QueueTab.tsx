@@ -1,18 +1,18 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { format } from 'date-fns'
-import { th } from 'date-fns/locale'
 import { CalendarPlus, ChevronDown, ChevronUp, Trash2, CalendarDays } from 'lucide-react'
 import { Booking, CameraId } from '@/types'
 import { CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
-import { blockDates, listBlockedSlots, deleteBlockedSlot, BlockedSlot } from '@/lib/api'
+import { blockDates, listBlockedSlots, deleteBlockedSlot, newRequestKey, BlockedSlot } from '@/lib/api'
+import { dayTimeLabel } from '@/lib/admin'
 import Button from '@/components/ui/Button'
 import BookingHeatmap from '@/components/BookingHeatmap'
 import { useFeedback } from './Feedback'
 import { cameraName } from './BookingCard'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const HEATMAP_KEY = 'miwvie_admin_heatmap'
 const HOUR_MS = 60 * 60 * 1000
 
 interface Props {
@@ -24,7 +24,17 @@ interface Props {
 
 export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots }: Props) {
   const { toast, confirm } = useFeedback()
-  const [showHeatmap, setShowHeatmap] = useState(false)
+  // Open by default; the choice is remembered on this phone
+  const [showHeatmap, setShowHeatmap] = useState(true)
+  useEffect(() => {
+    try { if (localStorage.getItem(HEATMAP_KEY) === '0') setShowHeatmap(false) } catch { /* storage blocked */ }
+  }, [])
+  const toggleHeatmap = () => setShowHeatmap((v) => {
+    try { localStorage.setItem(HEATMAP_KEY, v ? '0' : '1') } catch { /* storage blocked */ }
+    return !v
+  })
+  // One key per filled-in form: a retry after a timeout can't add the block twice
+  const requestKey = useRef(newRequestKey())
   const [showForm, setShowForm] = useState(false)
   const [camera, setCamera] = useState<CameraId | 'ALL'>('ALL')
   const [start, setStart] = useState('')
@@ -48,13 +58,14 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
     }
     setSubmitting(true)
     try {
-      const res = await blockDates(camera, s, en, reason, pin, qty)
+      const res = await blockDates(camera, s, en, reason, pin, qty, requestKey.current)
       if (!res.success) {
         toast(res.error || 'บันทึกไม่สำเร็จ', 'error')
         return
       }
-      const blocks = await listBlockedSlots(pin)
-      setBlockedSlots(blocks ?? [])
+      requestKey.current = newRequestKey()
+      // The block is saved; a failed re-read only means the list refreshes later
+      listBlockedSlots(pin).then(setBlockedSlots).catch(() => {})
       setStart('')
       setEnd('')
       setReason('')
@@ -71,7 +82,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
   async function handleDelete(b: BlockedSlot) {
     const ok = await confirm({
       title: 'ลบรายการบล็อกนี้?',
-      body: `${b.cameraId === 'ALL' ? 'ทุกรุ่น' : cameraName(b.cameraId)} · ${format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – ${format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })} — คิวช่วงนี้จะกลับมาจองได้`,
+      body: `${b.cameraId === 'ALL' ? 'ทุกรุ่น' : cameraName(b.cameraId)} · ${dayTimeLabel(b.startDatetime)} – ${dayTimeLabel(b.endDatetime)} — คิวช่วงนี้จะกลับมาจองได้`,
       confirmLabel: 'ลบ',
       danger: true,
     })
@@ -146,8 +157,8 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
       {/* Heatmap — collapsed by default */}
       <div className="glass rounded-xl">
         <button
-          onClick={() => setShowHeatmap((v) => !v)}
-          className="w-full flex items-center justify-between p-4 text-left"
+          onClick={toggleHeatmap}
+          className="w-full min-h-11 flex items-center justify-between p-4 text-left"
           aria-expanded={showHeatmap}
         >
           <span className="flex items-center gap-2 font-bold text-sm">
@@ -168,11 +179,14 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
           <h2 className="font-bold text-sm flex items-center gap-2">
             <CalendarPlus size={16} className="text-pink" /> บล็อกคิว / จองด้วยมือ
           </h2>
-          <button onClick={() => setShowForm((v) => !v)} className="text-xs text-pink hover:text-pink-light font-semibold">
-            {showForm ? 'ปิด' : '+ เพิ่มรายการ'}
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className={`min-h-11 px-4 rounded-xl text-sm font-semibold ${showForm ? 'text-gray-600' : 'bg-pink text-white'}`}
+          >
+            {showForm ? 'ปิด' : '+ บล็อกคิว'}
           </button>
         </div>
-        <p className="text-gray-500 text-xs mt-1">สำหรับลูกค้าที่ทัก DM/โทรจองตรง ไม่ผ่านเว็บ — บล็อกวันไว้ไม่ให้จองซ้ำ</p>
+        <p className="text-gray-600 text-xs mt-1">สำหรับลูกค้าที่ทัก DM/โทรจองตรง หรือกล้องซ่อม — บล็อกวันไว้ไม่ให้คนอื่นจองซ้ำ</p>
 
         <AnimatePresence>
           {showForm && (
@@ -190,7 +204,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                   <select
                     value={camera}
                     onChange={(e) => { setCamera(e.target.value as CameraId | 'ALL'); setQty(1) }}
-                    className="mt-1 w-full glass rounded-lg px-3 py-2 text-sm text-ink outline-none bg-transparent"
+                    className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent"
                   >
                     <option value="ALL">ทุกรุ่น</option>
                     {CAMERAS.map((c) => <option key={c.id} value={c.id}>{c.shortName}</option>)}
@@ -202,7 +216,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                     <select
                       value={qty}
                       onChange={(e) => setQty(Number(e.target.value))}
-                      className="mt-1 w-full glass rounded-lg px-3 py-2 text-sm text-ink outline-none bg-transparent"
+                      className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent"
                     >
                       {Array.from({ length: stock }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} ตัว</option>)}
                     </select>
@@ -212,12 +226,12 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                   <label className="text-xs text-gray-500">
                     เริ่ม
                     <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} required
-                      className="mt-1 w-full glass rounded-lg px-3 py-2 text-sm text-ink outline-none bg-transparent" />
+                      className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent" />
                   </label>
                   <label className="text-xs text-gray-500">
                     ถึง
                     <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required
-                      className="mt-1 w-full glass rounded-lg px-3 py-2 text-sm text-ink outline-none bg-transparent" />
+                      className="mt-1 w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm text-ink outline-none bg-transparent" />
                   </label>
                 </div>
                 <input
@@ -225,7 +239,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="หมายเหตุ (เช่น ชื่อลูกค้า, ทักผ่าน IG)"
                   aria-label="หมายเหตุ"
-                  className="w-full glass rounded-lg px-3 py-2 text-sm outline-none bg-transparent placeholder:text-gray-300"
+                  className="w-full min-h-11 glass rounded-lg px-3 text-base sm:text-sm outline-none bg-transparent placeholder:text-gray-500"
                 />
                 <Button type="submit" variant="primary" size="sm" fullWidth loading={submitting}>บันทึก</Button>
               </div>
@@ -238,7 +252,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
             รายการที่บล็อกไว้ — ยังไม่หมด {upcoming.length}
           </p>
           {visible.length === 0 ? (
-            <p className="text-xs text-gray-400 py-2">ไม่มีรายการ</p>
+            <p className="text-xs text-gray-600 py-2">ไม่มีรายการ</p>
           ) : (
             <div className="space-y-2">
               {visible.map((b) => {
@@ -253,17 +267,17 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
                         {b.reason && <span className="text-gray-500 font-normal"> · {b.reason}</span>}
                       </p>
                       <p className="text-gray-500">
-                        {format(new Date(b.startDatetime), 'd MMM HH:mm', { locale: th })} – {format(new Date(b.endDatetime), 'd MMM HH:mm', { locale: th })}
+                        {dayTimeLabel(b.startDatetime)} – {dayTimeLabel(b.endDatetime)}
                       </p>
                     </div>
                     <button
                       onClick={() => handleDelete(b)}
                       disabled={deletingId === b.id}
-                      className="p-2 rounded-lg hover:bg-red-50 text-red-500 shrink-0 disabled:opacity-40"
+                      className="w-11 h-11 flex items-center justify-center rounded-lg text-red-600 shrink-0 disabled:opacity-40"
                       title="ลบ"
                       aria-label="ลบรายการบล็อก"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 )
@@ -271,7 +285,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
             </div>
           )}
           {ended.length > 0 && (
-            <button onClick={() => setShowEnded((v) => !v)} className="mt-3 text-xs text-pink hover:text-pink-light font-medium">
+            <button onClick={() => setShowEnded((v) => !v)} className="mt-2 min-h-11 text-sm text-pink font-medium">
               {showEnded ? 'ซ่อนที่หมดแล้ว' : `แสดงที่หมดแล้ว (${ended.length})`}
             </button>
           )}
