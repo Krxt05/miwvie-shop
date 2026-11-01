@@ -8,6 +8,11 @@
   --gold: #6E1F31;
   --gold-light: #8C2B3F;
   --bg: #FBF6F2;
+  /* Fonts are self-hosted in public/fonts (see fonts.css). Playfair has no Thai,
+     so Thai text in font-display falls through to Noto Serif Thai. */
+  --font-noto: 'Noto Sans Thai';
+  --font-serif-thai: 'Noto Serif Thai';
+  --font-display: 'Playfair Display';
 }
 
 * {

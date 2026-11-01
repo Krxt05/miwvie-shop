@@ -1,27 +1,6 @@
 import type { Metadata } from 'next'
-import { Noto_Sans_Thai, Noto_Serif_Thai, Playfair_Display } from 'next/font/google'
+import './fonts.css'
 import './globals.css'
-
-const noto = Noto_Sans_Thai({
-  subsets: ['thai'],
-  weight: ['300', '400', '500', '600', '700'],
-  variable: '--font-noto',
-})
-
-// Thai glyphs for display headings — Playfair has none, so Thai text in
-// font-display falls through to this serif instead of the sans body font.
-const notoSerif = Noto_Serif_Thai({
-  subsets: ['thai'],
-  weight: ['500', '700'],
-  variable: '--font-serif-thai',
-})
-
-const playfair = Playfair_Display({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-display',
-})
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://miwvie-shop.vercel.app'),
@@ -41,7 +20,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={`${noto.variable} ${notoSerif.variable} ${playfair.variable}`}>
+    <html lang="th">
+      <head>
+        {/* The body font's Thai and Latin files, fetched before the CSS asks for them */}
+        <link rel="preload" href="/fonts/noto-sans-thai-normal-300-700-thai.woff2" as="font" type="font/woff2" crossOrigin="" />
+        <link rel="preload" href="/fonts/noto-sans-thai-normal-300-700-latin.woff2" as="font" type="font/woff2" crossOrigin="" />
+      </head>
       <body>
         {children}
       </body>
