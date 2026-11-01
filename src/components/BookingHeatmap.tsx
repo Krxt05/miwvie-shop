@@ -29,23 +29,23 @@ interface Props {
 // The sheet stores dates as real Date cells (UTC ISO from the API); read the
 // calendar day back out in the shop's own timezone so it lines up with what
 // was typed into the date picker.
-const bangkokKey = (value: string | Date): string => {
-  const date = typeof value === 'string' ? new Date(value) : value
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date)
-}
+// Formatters are built once — constructing one per call was a hot spot.
+const BKK_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const BKK_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+const bangkokKey = (value: string | Date): string =>
+  BKK_DAY_FMT.format(typeof value === 'string' ? new Date(value) : value)
 
-const bangkokTime = (date: Date): string =>
-  new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Bangkok',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+const bangkokTime = (date: Date): string => BKK_TIME_FMT.format(date)
 
 interface Tooltip {
   x: number
@@ -94,9 +94,11 @@ export default function BookingHeatmap({ rows }: Props) {
   const [month, setMonth] = useState(new Date())
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
 
-  const monthStart = startOfMonth(month)
-  const monthEnd = endOfMonth(month)
-  const days = useMemo(() => eachDayOfInterval({ start: monthStart, end: monthEnd }), [monthStart, monthEnd])
+  const monthMs = startOfMonth(month).getTime()
+  const days = useMemo(
+    () => eachDayOfInterval({ start: new Date(monthMs), end: endOfMonth(new Date(monthMs)) }),
+    [monthMs],
+  )
   const todayKey = bangkokKey(new Date())
 
   const heatRows = useMemo(() => {

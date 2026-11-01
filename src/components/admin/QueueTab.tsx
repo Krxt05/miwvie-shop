@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
@@ -92,7 +92,8 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
     }
   }
 
-  const occupancyRows = [
+  // Memoised so the heatmap's own memo can hit between renders
+  const occupancyRows = useMemo(() => [
     // Provincial bookings tie the unit up for both ship legs, so widen by the
     // lead time on each side; once returned they free up at the actual return
     // moment (mirrors readBookingSlotsAll on the backend).
@@ -132,7 +133,7 @@ export default function QueueTab({ pin, bookings, blockedSlots, setBlockedSlots 
         })),
       )
     }),
-  ]
+  ], [bookings, blockedSlots])
 
   const now = Date.now()
   const sortedBlocks = [...blockedSlots].sort((a, b) => new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime())

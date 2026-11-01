@@ -1,5 +1,5 @@
 'use client'
-import { createContext, ReactNode, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 
@@ -40,6 +40,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     return new Promise<boolean>((resolve) => { resolver.current = resolve })
   }, [])
 
+  // Stable value: a fresh object every render re-rendered the whole admin page
+  // on each toast show/hide.
+  const value = useMemo(() => ({ toast, confirm }), [toast, confirm])
+
   function close(ok: boolean) {
     resolver.current?.(ok)
     resolver.current = null
@@ -47,7 +51,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <FeedbackContext.Provider value={{ toast, confirm }}>
+    <FeedbackContext.Provider value={value}>
       {children}
 
       {/* Toasts sit above the mobile tab bar */}

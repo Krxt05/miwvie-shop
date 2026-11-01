@@ -13,15 +13,14 @@ export const STATUS_LABEL: Record<BookingStatus, string> = {
 
 // Calendar day in the shop's timezone, as 'yyyy-MM-dd' — the same key the
 // LINE bot's queue uses, so the admin "วันนี้" tab and the bot never disagree.
+// Bangkok is UTC+7 all year (no daylight saving), so shifting the timestamp and
+// reading the UTC date is exact — and far cheaper than building an
+// Intl.DateTimeFormat on every call, which made the admin tabs lag.
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 export function bangkokDay(value: string | Date | number): string {
-  const date = value instanceof Date ? value : new Date(value)
-  if (isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date)
+  const t = value instanceof Date ? value.getTime() : new Date(value).getTime()
+  if (isNaN(t)) return ''
+  return new Date(t + BANGKOK_OFFSET_MS).toISOString().slice(0, 10)
 }
 
 export function bangkokMonth(value: string | Date | number): string {
@@ -64,13 +63,14 @@ export function isPaid(b: Booking): boolean {
   return b.paymentStatus === 'confirmed' && b.bookingStatus !== 'cancelled'
 }
 
+const TIME_FMT = new Intl.DateTimeFormat('th-TH', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
 export function timeOf(value: string | Date): string {
   const d = new Date(String(value))
   if (isNaN(d.getTime())) return ''
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(d)
+  return TIME_FMT.format(d)
 }

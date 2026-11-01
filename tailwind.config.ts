@@ -1,6 +1,8 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
+  // On touch screens a tapped element kept its hover colour until the next tap
+  future: { hoverOnlyWhenSupported: true },
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
     extend: {

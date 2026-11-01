@@ -74,5 +74,6 @@ export interface Booking extends BookingFormData {
   bookingStatus: BookingStatus
   adminNotes: string
   returnedAt?: string  // ISO — set when admin marks the booking returned
+  paidAt?: string      // ISO — first time admin confirmed payment; empty on rows before Nov 2026
   accessToken?: string // unlocks the full booking page; admin-only, empty on very old rows
 }

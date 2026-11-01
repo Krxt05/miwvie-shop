@@ -86,3 +86,6 @@ body {
     opacity: 0.5;
   }
 }
+
+/* No double-tap-zoom wait on taps (iOS) */
+button, a, [role='tab'], summary { touch-action: manipulation; }

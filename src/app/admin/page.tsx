@@ -288,7 +288,13 @@ function AdminApp() {
         {tab === 'queue' && (
           <QueueTab pin={pin} bookings={bookings} blockedSlots={blockedSlots} setBlockedSlots={setBlockedSlots} />
         )}
-        {tab === 'revenue' && <RevenueTab bookings={bookings} />}
+        {tab === 'revenue' && (
+          <RevenueTab
+            bookings={bookings}
+            blockedSlots={blockedSlots}
+            onJumpToPending={() => { setFilters({ ...DEFAULT_FILTERS, status: 'pending' }); setTab('bookings') }}
+          />
+        )}
       </div>
 
       {/* Mobile bottom tab bar */}

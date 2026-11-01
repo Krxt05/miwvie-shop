@@ -16,6 +16,7 @@ const BOOKING_HEADERS = [
   'returned_at',
   'access_token', 'request_key',
   'contact_channel',
+  'paid_at', // when the admin pressed "ยืนยันรับเงิน" — the day money reached the account
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for
@@ -757,6 +758,7 @@ function createBooking(data) {
       returned_at: '',
       access_token: accessToken,
       request_key: requestKey,
+      paid_at: '',
     }
     const rowArr = header.map(function (name) {
       return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''
@@ -1255,12 +1257,18 @@ function updateBookingStatus(bookingId, status, pin) {
   const iStatus = h.indexOf('booking_status')
   const iPayment = h.indexOf('payment_status')
   const iReturnedAt = h.indexOf('returned_at')
+  const iPaidAt = h.indexOf('paid_at')
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== String(bookingId)) continue
     sheet.getRange(i + 1, iStatus + 1).setValue(status)
     if (status === 'confirmed') {
       sheet.getRange(i + 1, iPayment + 1).setValue('confirmed').setBackground('#d1fae5')
+      // First confirmation only, so walking a status back and forth never moves
+      // the day the money came in (the revenue tab reconciles against the bank).
+      if (iPaidAt >= 0 && !data[i][iPaidAt]) {
+        sheet.getRange(i + 1, iPaidAt + 1).setValue(new Date().toISOString())
+      }
     }
     if (status === 'cancelled') {
       sheet.getRange(i + 1, iStatus + 1).setBackground('#fee2e2')
