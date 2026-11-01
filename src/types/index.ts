@@ -74,4 +74,5 @@ export interface Booking extends BookingFormData {
   bookingStatus: BookingStatus
   adminNotes: string
   returnedAt?: string  // ISO — set when admin marks the booking returned
+  accessToken?: string // unlocks the full booking page; admin-only, empty on very old rows
 }

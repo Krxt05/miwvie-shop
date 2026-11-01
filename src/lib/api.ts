@@ -36,6 +36,7 @@ function mapBooking(r: Record<string, any>): Booking {
     discountCode:   String(r.discount_code ?? ''),
     discountAmount: Number(r.discount_amount) || 0,
     returnedAt:     r.returned_at ? String(r.returned_at) : undefined,
+    accessToken:    r.access_token ? String(r.access_token) : undefined,
   }
 }
 

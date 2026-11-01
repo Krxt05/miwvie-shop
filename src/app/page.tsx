@@ -20,6 +20,7 @@ import {
   MemoryStick,
   Usb,
   Backpack,
+  ClipboardList,
 } from 'lucide-react'
 import {
   CAMERAS,
@@ -34,7 +35,6 @@ import {
   SHOP_MAP_URL,
   LOCAL_DELIVERY_FEE,
 } from '@/lib/cameras'
-import { getAllCamerasAvailability } from '@/lib/api'
 import { CameraId, PriceTable } from '@/types'
 
 const IG_URL = 'https://www.instagram.com/miwvie_shop/'
@@ -110,6 +110,10 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     q: 'เช่าเกิน 7 วันคิดยังไง?',
     a: `คิดราคา 7 วัน แล้วบวกเพิ่มวันละ ${EXTRA_DAY_RATE.A}฿ (Group A) หรือ ${EXTRA_DAY_RATE.B}฿ (Group B)`,
   },
+  {
+    q: 'รีวิวรับส่วนลดยังไง?',
+    a: 'หลังเช่าเสร็จ ส่งรูปรีวิวอย่างน้อย 4 รูปมาที่ IG @miwvie_shop หรือ LINE ร้าน รับโค้ดส่วนลด 10% ค่าเช่า ใช้ได้ตอนจองครั้งถัดไป',
+  },
 ]
 
 const reveal = {
@@ -120,32 +124,9 @@ const reveal = {
 } as const
 
 export default function Home() {
-  const [busyNow, setBusyNow] = useState<Record<string, boolean>>({})
   const [calcCam, setCalcCam] = useState<CameraId>(CAMERAS[0].id)
   const [calcDur, setCalcDur] = useState<keyof PriceTable>('day1')
   const [showBar, setShowBar] = useState(false)
-
-  useEffect(() => {
-    const now = new Date()
-    getAllCamerasAvailability(now.getFullYear(), now.getMonth() + 1).then((data) => {
-      const busy: Record<string, boolean> = {}
-      for (const cam of CAMERAS) {
-        const slots = data[cam.id as CameraId] ?? []
-        const concurrent = slots
-          .filter((s) => {
-            const start = new Date(s.pickupDatetime)
-            const end = new Date(s.returnDatetime)
-            return start <= now && end > now
-          })
-          .reduce((sum, s) => sum + (s.quantity || 1), 0)
-        busy[cam.id] = concurrent >= cam.quantity
-      }
-      setBusyNow(busy)
-    }).catch((e) => {
-      // The free/busy badges are a nice-to-have: leave them off, but say why
-      console.warn('[home] availability badges unavailable:', e)
-    })
-  }, [])
 
   // Mobile booking bar appears once the hero's own buttons are scrolled away
   useEffect(() => {
@@ -185,6 +166,14 @@ export default function Home() {
             >
               <Instagram size={20} />
             </a>
+            <Link
+              href="/my-bookings"
+              aria-label="ประวัติการจอง"
+              className="inline-flex items-center gap-1.5 p-2 sm:px-3 rounded-full text-sm text-ink/70 hover:text-pink-700 transition-colors"
+            >
+              <ClipboardList size={20} />
+              <span className="hidden sm:inline">ประวัติการจอง</span>
+            </Link>
             <Link
               href="/book"
               className="inline-flex items-center gap-1.5 bg-pink-700 text-cream text-sm font-medium rounded-full pl-4 pr-3 py-2 hover:bg-pink-600 transition-colors"
@@ -242,11 +231,14 @@ export default function Home() {
               {[
                 { v: `${MIN_PRICE}฿`, l: 'เริ่มต้น / 6 ชม.' },
                 { v: '0฿', l: 'ไม่มีมัดจำ' },
-                { v: '10%', l: 'ส่วนลดเมื่อรีวิว' },
+                { v: '10%', l: 'ส่งรูปรีวิว 4 รูป', sub: 'รับส่วนลดเช่าครั้งต่อไป' },
               ].map((s, i) => (
                 <div key={s.l} className={i > 0 ? 'pl-4 sm:pl-6 border-l border-ink/10' : ''}>
                   <dt className="font-display text-3xl sm:text-4xl text-pink-700">{s.v}</dt>
-                  <dd className="text-xs sm:text-sm text-ink/55 mt-1">{s.l}</dd>
+                  <dd className="text-xs sm:text-sm text-ink/55 mt-1">
+                    {s.l}
+                    {'sub' in s && <span className="block text-[11px] sm:text-xs text-ink/45 mt-0.5 leading-snug">{s.sub}</span>}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -307,11 +299,10 @@ export default function Home() {
         <SectionHead
           eyebrow="The Collection"
           title="เลือกรุ่นที่ใช่"
-          aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว · สถานะว่าง ณ ตอนนี้`}
+          aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว`}
         />
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           {CAMERAS.map((c, i) => {
-            const busy = busyNow[c.id]
             return (
               <motion.div key={c.id} {...reveal} transition={{ ...reveal.transition, delay: i * 0.06 }}>
                 <Link
@@ -329,15 +320,7 @@ export default function Home() {
                       sizes="(min-width:1024px) 220px, (min-width:768px) 30vw, 45vw"
                       className="object-contain p-5 sm:p-6 drop-shadow-[0_14px_16px_rgba(46,12,21,0.3)] group-hover:scale-[1.06] group-hover:-rotate-2 transition-transform duration-500"
                     />
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px]">
-                      {busy === undefined ? (
-                        <span />
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 bg-white/85 backdrop-blur rounded-full px-2 py-0.5 text-ink/70">
-                          <span className={`w-1.5 h-1.5 rounded-full ${busy ? 'bg-pink-400' : 'bg-emerald-500'}`} />
-                          {busy ? 'ไม่ว่าง' : 'ว่าง'}
-                        </span>
-                      )}
+                    <div className="absolute top-3 left-3 right-3 flex items-center justify-end text-[11px]">
                       {c.quantity > 1 && (
                         <span className="bg-pink-700 text-cream rounded-full px-2 py-0.5 font-medium">{c.quantity} ตัว</span>
                       )}
@@ -432,7 +415,7 @@ export default function Home() {
                 <p className="text-sm text-cream/55 mt-3">เฉลี่ยวันละ {Math.round(price / dur.days)}฿</p>
               )}
               <p className="text-xs text-cream/45 mt-6 leading-relaxed">
-                เกิน 7 วัน +{EXTRA_DAY_RATE[cam.priceGroup]}฿/วัน · ค่า Delivery แยก {LOCAL_DELIVERY_FEE}฿/เที่ยว · รีวิวหลังเช่าลดอีก 10%
+                เกิน 7 วัน +{EXTRA_DAY_RATE[cam.priceGroup]}฿/วัน · ค่า Delivery แยก {LOCAL_DELIVERY_FEE}฿/เที่ยว · ส่งรูปรีวิว 4 รูปขึ้นไป รับโค้ดลด 10% เช่าครั้งต่อไป
               </p>
             </div>
             <Link

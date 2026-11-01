@@ -16,6 +16,7 @@ import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
 import Button from '@/components/ui/Button'
+import { rememberBooking, bookingPath } from '@/lib/myBookings'
 import { BookedSlot, BookingFormData, CameraId, ContactChannel, DeliveryType, RentalArea } from '@/types'
 
 const DURATION_OPTIONS = [
@@ -431,6 +432,10 @@ function BookPage() {
       setBookingId(id)
       setAccessToken(token)
       setStep(STEP_RECEIPT)
+      // Keep it in "ประวัติการจอง", and put the booking's own link in the address
+      // bar so a bookmark, refresh or the browser history leads back to it.
+      rememberBooking({ id, token, cameraId: cameraId!, pickup: pickupDatetime!.toISOString() })
+      try { window.history.replaceState(null, '', bookingPath(id, token)) } catch { /* link still on the slip */ }
 
       // Remember the typed details for next time — merged over what was saved
       // before, so a local booking doesn't wipe a saved provincial address.

@@ -6,6 +6,7 @@ import { addDays, format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import { ChevronLeft, Clock, CheckCircle, Package, RotateCcw, XCircle, RefreshCw } from 'lucide-react'
 import { getBooking, ApiError } from '@/lib/api'
+import { rememberBooking } from '@/lib/myBookings'
 import { PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL } from '@/lib/cameras'
 import { Booking } from '@/types'
 import Badge from '@/components/ui/Badge'
@@ -35,7 +36,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
     icon: RotateCcw,
     label: 'คืนแล้ว',
     color: 'text-gray-400',
-    sub: 'การเช่าเสร็จสิ้น ขอบคุณที่ใช้บริการ',
+    sub: 'การเช่าเสร็จสิ้น ขอบคุณที่ใช้บริการ · ส่งรูปรีวิว 4 รูปขึ้นไปมาที่ IG หรือ LINE ร้าน รับโค้ดลด 10% ครั้งหน้า',
   },
   cancelled: {
     icon: XCircle,
@@ -70,7 +71,15 @@ function BookingStatusInner() {
       // identical here, which told customers with a perfectly good booking that
       // it did not exist.
       if (!res) setNotFound(true)
-      else { setBooking(res.booking); setLimited(res.limited) }
+      else {
+        setBooking(res.booking)
+        setLimited(res.limited)
+        // A full link (e.g. one the shop sent) joins "ประวัติการจอง" on this device —
+        // but not when the shop itself opened it from the admin page.
+        if (!res.limited && token && !params.get('admin')) {
+          rememberBooking({ id, token, cameraId: res.booking.cameraId, pickup: String(res.booking.pickupDatetime) })
+        }
+      }
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : 'เชื่อมต่อไม่ได้ กรุณาลองใหม่')
     } finally {

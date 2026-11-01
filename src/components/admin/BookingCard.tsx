@@ -190,6 +190,8 @@ export default function BookingCard({ b, expanded, onToggle, actions, context }:
                 )}
               </div>
 
+              <BookingLink bookingId={b.bookingId} token={b.accessToken} />
+
               <NotesEditor b={b} onSave={actions.saveNotes} />
 
               {isProv && b.bookingStatus !== 'returned' && b.bookingStatus !== 'cancelled' && (
@@ -307,6 +309,56 @@ function ReviewCode({ bookingId, code, loading, onGenerate }: { bookingId: strin
           <Gift size={14} />
           ออกโค้ดส่วนลด
         </Button>
+      )}
+    </div>
+  )
+}
+
+// Shortcut to the customer's own booking page, to resend when they lost it.
+// Without the token the page shows status only (rows from before tokens existed).
+function BookingLink({ bookingId, token }: { bookingId: string; token?: string }) {
+  const [copied, setCopied] = useState(false)
+  const [manual, setManual] = useState(false)
+  const link = typeof window === 'undefined'
+    ? ''
+    : `${window.location.origin}/booking/${encodeURIComponent(bookingId)}${token ? `?t=${encodeURIComponent(token)}` : ''}`
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link)
+    } catch {
+      // Clipboard blocked — show the link so it can be copied by hand
+      setManual(true)
+      return
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="rounded-lg border border-pink-100 px-3 py-2 space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-gray-400">
+          ลิงก์ใบจอง{!token && <span className="text-amber-700"> · ใบเก่า ดูได้แค่สถานะ</span>}
+        </p>
+        <div className="flex items-center gap-3 shrink-0">
+          <button type="button" onClick={copy} className="flex items-center gap-1 text-xs text-pink hover:text-pink-light">
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+          </button>
+          <a href={`${link}${token ? '&' : '?'}admin=1`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-pink hover:text-pink-light">
+            <ExternalLink size={12} /> เปิด
+          </a>
+        </div>
+      </div>
+      {manual && (
+        <input
+          readOnly
+          value={link}
+          onFocus={(e) => e.currentTarget.select()}
+          autoFocus
+          className="w-full rounded-md bg-gray-50 px-2 py-1 font-mono text-[11px] outline-none"
+        />
       )}
     </div>
   )
