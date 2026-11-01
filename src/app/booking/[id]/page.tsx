@@ -49,8 +49,6 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
 function BookingStatusInner() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  // Fetch these ahead of time so their buttons switch pages at once
-  useEffect(() => { router.prefetch('/'); router.prefetch('/book') }, [router])
   const params = useSearchParams()
   // The booking ID is sequential and therefore guessable, so it alone no longer
   // unlocks the customer's own details — the token issued when the booking was

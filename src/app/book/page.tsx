@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { addDays, addHours, format, differenceInHours } from 'date-fns'
@@ -68,18 +68,14 @@ const PROVINCIAL_ENABLED = true
 const QUEUE_LOADING_MSG = 'กำลังโหลดคิว รอสักครู่'
 
 function BookPage() {
-  const params = useSearchParams()
   const router = useRouter()
   // Fetch the home page ahead of time so its button switches pages at once
-  useEffect(() => { router.prefetch('/') }, [router])
 
   const [step, setStep] = useState(0)
-  // Ignore a stale ?camera= (e.g. an old link to a retired model) so the
-  // customer lands on the picker instead of a blank date step.
-  const [cameraId, setCameraId] = useState<CameraId | null>(() => {
-    const id = params.get('camera')
-    return CAMERAS.some((c) => c.id === id) ? (id as CameraId) : null
-  })
+  // ?camera= is read after mount (see below), not during render: reading the
+  // URL while rendering made Next ship /book as an empty shell, so a tap on
+  // "จองเลย" before the home page finished loading showed a blank page.
+  const [cameraId, setCameraId] = useState<CameraId | null>(null)
   // Never pre-pick an area when the choice is live — the customer has to make it
   // themselves, even when they deep-linked in with a camera already chosen.
   const [rentalArea, setRentalArea] = useState<RentalArea | null>(
@@ -269,7 +265,12 @@ function BookPage() {
   // arriving from a camera card would silently be locked into a local rental —
   // so only jump ahead when there is no area to choose.
   useEffect(() => {
-    if (cameraId && params.get('camera') && !PROVINCIAL_ENABLED) setStep(STEP_DATE)
+    // Ignore a stale ?camera= (e.g. an old link to a retired model) so the
+    // customer lands on the picker instead of a blank date step.
+    const id = new URLSearchParams(window.location.search).get('camera')
+    if (!CAMERAS.some((c) => c.id === id)) return
+    setCameraId(id as CameraId)
+    if (!PROVINCIAL_ENABLED) setStep(STEP_DATE)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -405,13 +406,18 @@ function BookPage() {
     }))
   }
 
+  // True once the customer has moved off the first step (see the CSS slide-in)
+  const stepChangedRef = useRef(false)
+
   function next() {
     if (!validateStep()) return
+    stepChangedRef.current = true
     holdStepHeight()
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
   function back() {
+    stepChangedRef.current = true
     holdStepHeight()
     setStep((s) => Math.max(s - 1, 0))
   }
@@ -598,9 +604,13 @@ function BookPage() {
             one arriving. A smooth scroll started on click ran alongside the swap
             while the page height changed under it, which made it stutter. */}
         <div ref={stepAreaRef}>
-        <AnimatePresence mode="wait" onExitComplete={releaseStepHeight}>
+        {/* initial={false}: the first step must be visible in the server HTML
+            (framer would bake in opacity:0 until the JS loads), so its slide-in
+            runs as a plain CSS animation instead — same motion, no waiting. */}
+        <AnimatePresence initial={false} mode="wait" onExitComplete={releaseStepHeight}>
           <motion.div
             key={step}
+            className={stepChangedRef.current ? undefined : 'animate-step-in'}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}

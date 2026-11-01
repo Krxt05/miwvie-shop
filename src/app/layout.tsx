@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { Noto_Sans_Thai, Noto_Serif_Thai, Playfair_Display } from 'next/font/google'
 import './globals.css'
-import DebugOverlay from '@/components/DebugOverlay'
 
 const noto = Noto_Sans_Thai({
   subsets: ['thai'],
@@ -45,7 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="th" className={`${noto.variable} ${notoSerif.variable} ${playfair.variable}`}>
       <body>
         {children}
-        <DebugOverlay />
       </body>
     </html>
   )

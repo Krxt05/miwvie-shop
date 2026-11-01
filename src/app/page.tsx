@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { warmQueues } from '@/lib/api'
 import Image from 'next/image'
 import {
   Instagram,
@@ -42,6 +41,13 @@ const IG_URL = 'https://www.instagram.com/miwvie_shop/'
 const WINE_BG = 'radial-gradient(120% 100% at 80% 0%, #8E3A4C 0%, #6E1F31 45%, #45121F 100%)'
 
 const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
+// The general "book now" buttons carry a query string like the camera-card
+// links do (/book?camera=…). On iPhone Safari, entering via the bare /book URL
+// froze ~1.3s at a time for the whole booking flow while the camera-card links
+// stayed smooth; with this (plus /book no longer reading the URL while
+// rendering) it's smooth on the owner's iPhone. Keep both.
+const BOOK_HREF = '/book?from=home'
+
 const TOTAL_UNITS = CAMERAS.reduce((n, c) => n + c.quantity, 0)
 
 const ACCESSORY_ICONS = [BatteryFull, PlugZap, Briefcase, MemoryStick, Usb, Backpack]
@@ -129,15 +135,6 @@ export default function Home() {
   const [calcDur, setCalcDur] = useState<keyof PriceTable>('day1')
   const [showBar, setShowBar] = useState(false)
 
-  // Get the booking queues ready (CDN cache + Apps Script awake) while the
-  // customer is still reading, so the date step doesn't stall after "จองเลย".
-  useEffect(() => {
-    const go = () => warmQueues(CAMERAS.map((c) => c.id))
-    const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
-    if (ric) ric(go)
-    else setTimeout(go, 1500)
-  }, [])
-
   // Mobile booking bar appears once the hero's own buttons are scrolled away
   useEffect(() => {
     const onScroll = () => setShowBar(window.scrollY > 640)
@@ -185,7 +182,7 @@ export default function Home() {
               ประวัติการจอง
             </Link>
             <Link
-              href="/book"
+              href={BOOK_HREF}
               className="inline-flex items-center gap-1.5 bg-pink-700 text-cream text-sm font-medium rounded-full pl-4 pr-3 py-2 hover:bg-pink-600 transition-colors whitespace-nowrap"
             >
               จองคิว <ArrowRight size={15} />
@@ -223,7 +220,7 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mt-8">
               <Link
-                href="/book"
+                href={BOOK_HREF}
                 className="group inline-flex items-center justify-center gap-2 bg-pink-700 text-cream font-medium rounded-full px-7 py-4 text-base hover:bg-pink-600 transition-all shadow-[0_10px_30px_-10px_rgba(110,31,49,0.7)]"
               >
                 เช็กคิวว่าง & จองเลย
@@ -657,7 +654,7 @@ export default function Home() {
             <p className="text-cream/70 mt-5">เช็กคิวว่างได้ทันที จองเสร็จในไม่กี่นาที</p>
             <div className="flex flex-col sm:flex-row gap-3 mt-8">
               <Link
-                href="/book"
+                href={BOOK_HREF}
                 className="group inline-flex items-center justify-center gap-2 bg-cream text-pink-800 font-semibold rounded-full px-7 py-4 hover:bg-white transition-colors"
               >
                 จองกล้องเลย <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
@@ -714,7 +711,7 @@ export default function Home() {
             เริ่มต้น <b className="text-brass-light">{MIN_PRICE}฿</b>
             <span className="text-cream/50"> · ไม่มีมัดจำ</span>
           </p>
-          <Link href="/book" className="bg-cream text-pink-800 font-semibold text-sm rounded-xl px-5 py-3">
+          <Link href={BOOK_HREF} className="bg-cream text-pink-800 font-semibold text-sm rounded-xl px-5 py-3">
             จองเลย
           </Link>
         </div>

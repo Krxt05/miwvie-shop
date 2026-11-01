@@ -145,13 +145,6 @@ export function queueFromDate(): Date {
   return d
 }
 
-// Fire-and-forget: get every model's queue into the CDN cache (and Apps Script
-// awake) before the customer reaches the date step.
-export function warmQueues(cameraIds: string[]) {
-  cameraIds.forEach((id) => {
-    getAvailability(id as CameraId, { from: queueFromDate() }).catch(() => { /* just a warm-up */ })
-  })
-}
 
 // Without a month the backend returns every month for the camera in one read.
 // That's one Apps Script execution instead of one per month, and Apps Script

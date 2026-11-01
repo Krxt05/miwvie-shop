@@ -57,11 +57,16 @@ const config: Config = {
         float: 'float 6s ease-in-out infinite',
         'pulse-pink': 'pulsePink 2s ease-in-out infinite',
         marquee: 'marquee 40s linear infinite',
+        'step-in': 'stepIn 0.25s ease-out both',
       },
       keyframes: {
         float: {
           '0%,100%': { transform: 'translateY(0px)' },
           '50%': { transform: 'translateY(-12px)' },
+        },
+        stepIn: {
+          '0%': { opacity: '0', transform: 'translateX(20px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
         },
         marquee: {
           '0%': { transform: 'translateX(0)' },
