@@ -762,6 +762,9 @@ function createBooking(data) {
       return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''
     })
     const newRow = sheet.getLastRow() + 1
+    // Store the phone as text, or Sheets turns 0812345678 into the number 812345678
+    const phoneIdx = header.indexOf('customer_phone')
+    if (phoneIdx >= 0) sheet.getRange(newRow, phoneIdx + 1).setNumberFormat('@')
     sheet.getRange(newRow, 1, 1, rowArr.length).setValues([rowArr])
 
     // Spend the coupon before the lock frees, so the booking and the code being
@@ -1601,4 +1604,57 @@ function uploadImage(base64Data, filename) {
     Logger.log('Upload error: ' + e.message)
     return ''
   }
+}
+
+
+// ── One-off: restore the leading 0 on phone numbers ─────────
+// Sheets stored older phones as numbers, dropping the 0 (0812345678 → 812345678).
+// Run from the Apps Script editor (not exposed to the web app):
+//   fixPhonesDryRun  — logs what would change, writes nothing
+//   fixPhonesApply   — makes the column plain text and writes the fixed numbers
+function fixPhoneNumbers_(apply) {
+  const sheet = getSpreadsheet().getSheetByName('bookings')
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  const col = header.indexOf('customer_phone') + 1
+  const idCol = header.indexOf('booking_id') + 1
+  const n = sheet.getLastRow() - 1
+  if (!col || n < 1) return { changed: [], skipped: [] }
+
+  const range = sheet.getRange(2, col, n, 1)
+  const values = range.getValues()
+  const ids = sheet.getRange(2, idCol, n, 1).getValues()
+  const changed = []
+  const skipped = []
+  const out = values.map(function (r, i) {
+    const raw = r[0]
+    const digits = String(raw).replace(/[^0-9]/g, '')
+    if (!digits) return [raw]
+    // A Thai number lost only its leading 0: mobile 9 digits left, landline 8
+    if (digits[0] !== '0' && (digits.length === 9 || digits.length === 8)) {
+      const fixed = '0' + digits
+      changed.push(ids[i][0] + ': ' + raw + ' → ' + fixed)
+      return [fixed]
+    }
+    if (digits[0] !== '0') skipped.push(ids[i][0] + ': ' + raw + ' (ไม่แน่ใจ ไม่แก้)')
+    return [typeof raw === 'number' ? String(raw) : raw]
+  })
+
+  if (apply) {
+    range.setNumberFormat('@')
+    range.setValues(out)
+    SpreadsheetApp.flush()
+  }
+  return { changed: changed, skipped: skipped }
+}
+
+function fixPhonesDryRun() {
+  const r = fixPhoneNumbers_(false)
+  Logger.log('จะแก้ ' + r.changed.length + ' แถว\n' + r.changed.join('\n'))
+  Logger.log('ข้าม ' + r.skipped.length + ' แถว\n' + r.skipped.join('\n'))
+}
+
+function fixPhonesApply() {
+  const r = fixPhoneNumbers_(true)
+  Logger.log('แก้แล้ว ' + r.changed.length + ' แถว\n' + r.changed.join('\n'))
+  Logger.log('ข้าม ' + r.skipped.length + ' แถว\n' + r.skipped.join('\n'))
 }
