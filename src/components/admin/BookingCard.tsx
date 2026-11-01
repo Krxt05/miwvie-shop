@@ -190,6 +190,8 @@ export default function BookingCard({ b, expanded, onToggle, actions, context }:
                 )}
               </div>
 
+              {isProv && <ShippingLabelCopy b={b} />}
+
               <BookingLink bookingId={b.bookingId} token={b.accessToken} />
 
               <NotesEditor b={b} onSave={actions.saveNotes} />
@@ -309,6 +311,61 @@ function ReviewCode({ bookingId, code, loading, onGenerate }: { bookingId: strin
           <Gift size={14} />
           ออกโค้ดส่วนลด
         </Button>
+      )}
+    </div>
+  )
+}
+
+// Name / phone / address ready to paste into the parcel app when shipping out.
+// Bangkok uses แขวง/เขต; everywhere else ตำบล/อำเภอ.
+export function shippingLabel(b: Booking): string {
+  const bkk = String(b.shippingProvince).includes('กรุงเทพ')
+  const address = [
+    String(b.shippingAddress).trim(),
+    b.shippingSubdistrict ? `${bkk ? 'แขวง' : 'ต.'}${b.shippingSubdistrict}` : '',
+    b.shippingDistrict ? `${bkk ? 'เขต' : 'อ.'}${b.shippingDistrict}` : '',
+    b.shippingProvince ? (bkk ? String(b.shippingProvince) : `จ.${b.shippingProvince}`) : '',
+    String(b.shippingPostalCode || ''),
+  ].filter(Boolean).join(' ')
+  return [String(b.customerName).trim(), String(b.customerPhone).trim(), address].join('\n')
+}
+
+function ShippingLabelCopy({ b }: { b: Booking }) {
+  const [copied, setCopied] = useState(false)
+  const [manual, setManual] = useState(false)
+  const label = shippingLabel(b)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(label)
+    } catch {
+      setManual(true)
+      return
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="rounded-lg border border-pink-100 px-3 py-2 space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-gray-400">ที่อยู่สำหรับส่งพัสดุ</p>
+        <button type="button" onClick={copy} className="flex items-center gap-1 text-xs text-pink hover:text-pink-light shrink-0">
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+        </button>
+      </div>
+      {manual ? (
+        <textarea
+          readOnly
+          value={label}
+          rows={3}
+          onFocus={(e) => e.currentTarget.select()}
+          autoFocus
+          className="w-full rounded-md bg-gray-50 px-2 py-1 text-xs outline-none resize-none"
+        />
+      ) : (
+        <p className="text-sm whitespace-pre-line leading-relaxed">{label}</p>
       )}
     </div>
   )
