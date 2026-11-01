@@ -148,7 +148,7 @@ export default function Home() {
         <div className="flex items-center justify-between gap-3 px-4 sm:px-6 h-16 max-w-6xl mx-auto">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">
             <Image src="/logo.png" alt="" width={36} height={36} className="rounded-full shrink-0" />
-            <span className="font-display text-xl font-bold tracking-wide text-pink-700">MIWVIE</span>
+            <span className="font-display text-xl font-bold tracking-wide text-pink-700 max-[379px]:hidden">MIWVIE</span>
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm text-ink/70">
             <a href="#cameras" className="hover:text-pink-700 transition-colors">กล้อง</a>
@@ -162,21 +162,21 @@ export default function Home() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Instagram @miwvie_shop"
-              className="p-2 rounded-full text-ink/60 hover:text-pink-700 transition-colors"
+              className="hidden sm:block p-2 rounded-full text-ink/60 hover:text-pink-700 transition-colors"
             >
               <Instagram size={20} />
             </a>
             <Link
               href="/my-bookings"
               aria-label="ประวัติการจอง"
-              className="inline-flex items-center gap-1.5 p-2 sm:px-3 rounded-full text-sm text-ink/70 hover:text-pink-700 transition-colors"
+              className="inline-flex items-center gap-1 rounded-full border border-pink-700/30 text-pink-700 text-xs sm:text-sm font-medium px-2.5 sm:px-3 py-1.5 sm:py-2 hover:bg-pink-700/5 transition-colors whitespace-nowrap"
             >
-              <ClipboardList size={20} />
-              <span className="hidden sm:inline">ประวัติการจอง</span>
+              <ClipboardList size={16} />
+              ประวัติการจอง
             </Link>
             <Link
               href="/book"
-              className="inline-flex items-center gap-1.5 bg-pink-700 text-cream text-sm font-medium rounded-full pl-4 pr-3 py-2 hover:bg-pink-600 transition-colors"
+              className="inline-flex items-center gap-1.5 bg-pink-700 text-cream text-sm font-medium rounded-full pl-4 pr-3 py-2 hover:bg-pink-600 transition-colors whitespace-nowrap"
             >
               จองคิว <ArrowRight size={15} />
             </Link>
