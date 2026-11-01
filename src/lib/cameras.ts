@@ -164,6 +164,12 @@ export const INCLUDED_ACCESSORIES = [
 export const DELIVERY_LOCATION = 'หอพักเมธาเรสสิเดนท์ 3'
 // Where self pickup/return happens (the dorm above)
 export const SHOP_MAP_URL = 'https://maps.app.goo.gl/pHcoGaLEbY3njikQ9'
+// Where provincial customers ship the camera back to
+export const RETURN_SHIPPING_ADDRESS = [
+  'นายกฤษณัน พุทธมาตย์',
+  '0820409263',
+  '268 หอพักเมธาเรสสิเด้นท์ 3 ม.3 ต.ท่าขอนยาง อ.กันทรวิชัย จ.มหาสารคาม 44150',
+].join('\n')
 export const PROMPTPAY_NUMBER = '0981016683'
 // The shop's LINE OA (@005vsebr) — customers can send slips here as well as IG
 export const LINE_URL = 'https://lin.ee/s6beUHc'

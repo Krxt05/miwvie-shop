@@ -1,7 +1,7 @@
 // Ready-made chat messages for the admin to copy into IG/LINE. Short, no
 // gendered sentence particles, so either owner can send them as-is.
 import { Booking } from '@/types'
-import { CAMERAS, DELIVERY_LOCATION, SHOP_MAP_URL } from '@/lib/cameras'
+import { CAMERAS, DELIVERY_LOCATION, RETURN_SHIPPING_ADDRESS, SHOP_MAP_URL } from '@/lib/cameras'
 import { agoLabel, dayLabel, dayTimeLabel, dueBack } from '@/lib/admin'
 import { baht } from '@/lib/revenue'
 
@@ -41,17 +41,21 @@ export function messageTemplates(b: Booking, reviewCode?: string): MessageTempla
   })
 
   const ready = prov
-    ? `ส่งพัสดุ ${cam} แล้ว 📦\nเลขพัสดุ: \nถึงประมาณ ${dayLabel(b.pickupDatetime)}`
+    ? `ส่งพัสดุ ${cam} แล้ว 📦\nเลขพัสดุ: \nถึงประมาณ ${dayLabel(b.pickupDatetime)}\n\nตอนส่งคืน ส่งมาที่ 👇\n${RETURN_SHIPPING_ADDRESS}`
     : b.pickupType === 'delivery'
       ? `กล้อง ${cam} พร้อมแล้ว 📷\nจะไปส่งที่ ${b.pickupAddress} เวลา ${dayTimeLabel(b.pickupDatetime)}`
       : `กล้อง ${cam} พร้อมแล้ว 📷\nนัดรับ ${dayTimeLabel(b.pickupDatetime)} ที่${DELIVERY_LOCATION}\nแผนที่: ${SHOP_MAP_URL}`
   out.push({ id: 'ready', label: prov ? 'ส่งพัสดุแล้ว' : 'พร้อมรับ', text: ready })
 
+  if (prov) {
+    out.push({ id: 'returnAddr', label: 'ที่อยู่ส่งคืน', text: `ที่อยู่สำหรับส่งกล้องคืน 📦\n${RETURN_SHIPPING_ADDRESS}` })
+  }
+
   out.push({
     id: 'remind',
     label: 'เตือนคืน',
     text: prov
-      ? `แจ้งเตือนส่งคืน ${cam} 📦\nส่งพัสดุคืนภายใน ${dayLabel(due)} ก่อน 12:00 แล้วแจ้งเลขพัสดุในแชทนี้`
+      ? `แจ้งเตือนส่งคืน ${cam} 📦\nส่งพัสดุคืนภายใน ${dayLabel(due)} ก่อน 12:00 แล้วแจ้งเลขพัสดุในแชทนี้\n\nที่อยู่ส่งคืน 👇\n${RETURN_SHIPPING_ADDRESS}`
       : `แจ้งเตือนคืนกล้อง ${cam} ⏰\nกำหนดคืน ${dayTimeLabel(due)}${b.returnType === 'delivery' ? ` · ร้านไปรับที่ ${b.returnAddress || b.pickupAddress}` : ` ที่${DELIVERY_LOCATION}`}`,
   })
 
@@ -69,9 +73,23 @@ export function messageTemplates(b: Booking, reviewCode?: string): MessageTempla
     text: [
       'ขอบคุณที่ใช้บริการค่ะ🙏💕',
       'ตัวเองสามารถส่งรูปรีวิว 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
-      reviewCode ? `🎁 Code ส่วนลด: ${reviewCode}` : '',
-    ].filter(Boolean).join('\n'),
+    ].join('\n'),
   })
+
+  // After the customer sent their review photos and the code was issued
+  if (reviewCode) {
+    out.push({
+      id: 'thanks',
+      label: 'ขอบคุณหลังรีวิว',
+      text: [
+        'ขอบคุณสำหรับรีวิวค่ะ 🥰💕',
+        'ทางร้านขออนุญาตนำภาพไปโปรโมตร้านนะคะ 📸✨',
+        '',
+        `🎁 Code ส่วนลด 10%: ${reviewCode}`,
+        'สามารถนำไปกรอกในการจองครั้งถัดไปได้เลยน้า 🙏',
+      ].join('\n'),
+    })
+  }
 
   // The message most likely needed now goes first; ones that no longer fit
   // the booking's stage are dropped.
@@ -83,8 +101,8 @@ export function messageTemplates(b: Booking, reviewCode?: string): MessageTempla
 
 const ORDER: Record<string, string[]> = {
   pending: ['docs', 'paid', 'ready', 'remind'],
-  confirmed: ['ready', 'paid', 'remind', 'docs'],
-  active: ['overdue', 'remind', 'review'],
-  returned: ['review'],
+  confirmed: ['ready', 'paid', 'remind', 'returnAddr', 'docs'],
+  active: ['overdue', 'remind', 'returnAddr', 'review'],
+  returned: ['thanks', 'review'],
   cancelled: [],
 }

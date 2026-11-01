@@ -91,7 +91,10 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
   const notHandedOver = isNotHandedOver(b)
   const busy = actions.isBusy(b.bookingId)
   const steps = forwardSteps(b)
-  const existingCode = actions.discountCodes[b.bookingId] || String(b.discountCode || '')
+  // The review code issued for this booking. Not b.discountCode — that's the
+  // code the customer *used* when booking, and sending it back would be wrong.
+  // Pressing "ออกโค้ด" again just returns the same active code from the server.
+  const existingCode = actions.discountCodes[b.bookingId] || ''
   const ownTag = String(b.adminNotes || '').includes(BLACKLIST_TAG)
   // Without ID/IG the forward button asks for them instead; confirming anyway
   // is still possible from the expanded card, on purpose.
@@ -112,7 +115,12 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
       >
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-600 tabular-nums truncate">{when}</p>
-          <p className="font-semibold text-sm truncate mt-0.5">{String(b.customerName)}</p>
+          <p className="text-sm mt-0.5 flex items-baseline gap-1.5 min-w-0">
+            <span className="font-semibold truncate shrink">{String(b.customerName)}</span>
+            {contactHandle(b) && (
+              <span className="text-xs text-gray-600 truncate shrink-[2]">· {contactHandle(b)}</span>
+            )}
+          </p>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             <Badge label={STATUS_LABEL[b.bookingStatus] ?? b.bookingStatus} variant={b.bookingStatus} />
             {customer.blacklisted && <Pill tone="red"><Ban size={10} /> ห้ามเช่า</Pill>}
@@ -437,6 +445,16 @@ function MessageSheet({ b, reviewCode, onClose }: { b: Booking; reviewCode: stri
       </div>
     </div>
   )
+}
+
+// "IG @name" / "LINE name" shown next to the real name, so the owner knows
+// which chat to open without expanding the card
+function contactHandle(b: Booking): string {
+  const name = String(b.customerIG || '').trim()
+  if (!name) return ''
+  if (b.contactChannel === 'line') return `LINE ${name}`
+  if (b.contactChannel === 'ig') return `IG @${name.replace(/^@/, '')}`
+  return `IG/LINE ${name}` // older bookings didn't record which app
 }
 
 function telNumber(phone: string): string {
