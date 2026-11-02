@@ -251,27 +251,12 @@ export default function Home() {
       <section className="px-4 sm:px-6 pt-4 sm:pt-10 pb-10 sm:pb-20 max-w-6xl mx-auto">
         <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 items-center">
           {/* Visual: photo + a second print + the camera that took it (the owner's
-              favourite part of the old hero — kept exactly as it was, on every screen size) */}
-          <div className="min-w-0 lg:col-start-2 pb-4 md:pb-6">
-            <div className="relative mx-auto w-full max-w-[400px] lg:max-w-[440px] aspect-[4/5]">
-              <div className="absolute inset-y-0 right-0 w-[78%] rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
-                <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, 80vw" className="object-cover" />
-              </div>
-              <div className="absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
-                <div className="relative aspect-[3/4]">
-                  <Image src="/mood/ixy30s-2.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill sizes="180px" className="object-cover" />
-                </div>
-                <p className="absolute bottom-1 left-0 right-0 text-center font-display italic text-[11px] text-ink/60">shot on IXY 30s</p>
-              </div>
-              <Image
-                src="/cameras/ixy30s-new.png"
-                alt=""
-                width={522}
-                height={460}
-                className="absolute -bottom-6 right-[-4%] w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
-              />
+              favourite part of the old hero), one slide per model — swipe or let it play */}
+          <div className="min-w-0 lg:col-start-2">
+            <div className="relative mx-auto w-full max-w-[400px] lg:max-w-[440px]">
+              <HeroSlides />
               <div
-                className="absolute top-[6%] left-[4%] w-24 h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
+                className="absolute z-10 top-[5%] left-[4%] w-24 h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg pointer-events-none"
                 style={{ background: 'radial-gradient(circle at 35% 30%, #EBD39B, #C9A45C 60%, #A07D3B)' }}
               >
                 <span className="text-[10px] font-semibold">รีวิวรับ</span>
@@ -356,7 +341,7 @@ export default function Home() {
 
       {/* ───────── Queue checker + key facts ───────── */}
       <section id="availability" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
-        <SectionHead eyebrow="Availability" title="ตรวจสอบคิว" aside="แตะช่องที่ว่างเพื่อจองรุ่นและวันนั้น" />
+        <SectionHead eyebrow="Availability" title="ตรวจสอบคิว" aside="ดูวันว่างของกล้องแต่ละรุ่น" />
         <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 items-start">
           <div ref={checkerRef} className="min-w-0 min-h-[360px]">
             <QueueHeatmap />
@@ -660,6 +645,122 @@ function Fact({ icon: Icon, title, sub }: { icon: React.ElementType; title: stri
         <dt className="font-medium text-ink leading-snug">{title}</dt>
         {sub && <dd className="text-ink/60 text-xs mt-0.5 leading-snug">{sub}</dd>}
       </div>
+    </div>
+  )
+}
+
+// Hero slides: same arched photo + polaroid + camera composition for every
+// model. Native scroll-snap does the swiping; a gentle auto-advance runs only
+// while the hero is on screen and stops for good once the visitor swipes.
+const HERO_SLIDES = [
+  { cam: 'IXY 30s', arch: '/mood/ixy30s-3.jpg', print: '/mood/ixy30s-2.jpg', body: '/cameras/ixy30s-new.png', w: 522 },
+  { cam: 'IXY 10s', arch: '/mood/ixy10s-1.jpg', print: '/mood/ixy10s-2.jpg', body: '/cameras/ixy10s-new.png', w: 266 },
+  { cam: 'IXY 930 IS', arch: '/mood/ixy930is-1.jpg', print: '/mood/ixy930is-2.jpg', body: '/cameras/ixy930is-new.png', w: 526 },
+  { cam: 'IXY 510 IS', arch: '/mood/ixy510is-1.jpg', print: '/mood/ixy510is-2.jpg', body: '/cameras/ixy510is-new.png', w: 267 },
+  { cam: 'IXY 200', arch: '/mood/ixy200-1.jpg', print: '/mood/ixy200-2.jpg', body: '/cameras/ixy200-new.png', w: 253 },
+]
+const HERO_AUTOPLAY_MS = 4500
+
+function HeroSlides() {
+  const track = useRef<HTMLDivElement>(null)
+  const [idx, setIdx] = useState(0)
+  const idxRef = useRef(0)
+  const touched = useRef(false)
+
+  const go = (i: number) => {
+    const el = track.current
+    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    const el = track.current
+    if (!el) return
+    let raf = 0
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const i = Math.max(0, Math.min(HERO_SLIDES.length - 1, Math.round(el.scrollLeft / el.clientWidth)))
+        idxRef.current = i
+        setIdx(i)
+      })
+    }
+    const stop = () => { touched.current = true }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('pointerdown', stop, { passive: true })
+    el.addEventListener('touchstart', stop, { passive: true })
+    el.addEventListener('wheel', stop, { passive: true })
+
+    // Auto-advance: on screen, tab visible, no reduced-motion, not yet touched
+    let visible = false
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting }, { threshold: 0.5 })
+    io.observe(el)
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const timer = reduce ? 0 : window.setInterval(() => {
+      if (!visible || touched.current || document.hidden) return
+      go((idxRef.current + 1) % HERO_SLIDES.length)
+    }, HERO_AUTOPLAY_MS)
+
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('pointerdown', stop)
+      el.removeEventListener('touchstart', stop)
+      el.removeEventListener('wheel', stop)
+      cancelAnimationFrame(raf)
+      io.disconnect()
+      if (timer) window.clearInterval(timer)
+    }
+  }, [])
+
+  return (
+    <div>
+      {/* Track sticks out well past the photo on every side but the top, so
+          the soft shadows, tilted print and camera aren't cut off by the
+          scroll box (on phones the screen edge clips it instead) */}
+      <div
+        ref={track}
+        className={`-mx-16 px-0 pb-24 -mb-16 flex overflow-x-auto snap-x snap-mandatory overscroll-x-contain ${HIDE_SCROLLBAR}`}
+        aria-roledescription="carousel"
+        aria-label="ภาพถ่ายจากกล้องแต่ละรุ่น"
+      >
+        {HERO_SLIDES.map((sl, i) => (
+          <div key={sl.cam} className="shrink-0 w-full snap-start px-16" aria-roledescription="slide" aria-label={`${i + 1} จาก ${HERO_SLIDES.length}: ${sl.cam}`}>
+            <div className="relative aspect-[4/5]">
+              <div className="absolute inset-y-0 right-0 w-[78%] rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
+                <Image src={sl.arch} alt={`ภาพถ่ายจากกล้อง ${sl.cam}`} fill priority={i === 0} sizes="(min-width:1024px) 360px, 80vw" className="object-cover" />
+              </div>
+              <div className="absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
+                <div className="relative aspect-[3/4]">
+                  <Image src={sl.print} alt={`ภาพถ่ายจากกล้อง ${sl.cam}`} fill sizes="180px" className="object-cover" />
+                </div>
+                <p className="absolute bottom-1 left-0 right-0 text-center font-display italic text-[11px] text-ink/60">shot on {sl.cam}</p>
+              </div>
+              <Image
+                src={sl.body}
+                alt=""
+                width={sl.w}
+                height={460}
+                className="absolute -bottom-6 right-[-4%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
+                style={{ width: `${(46 * sl.w) / 522}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-center gap-1.5 -mt-1" role="group" aria-label="เลือกรุ่น">
+        {HERO_SLIDES.map((sl, i) => (
+          <button
+            key={sl.cam}
+            onClick={() => { touched.current = true; go(i) }}
+            aria-label={sl.cam}
+            aria-current={i === idx}
+            className="h-6 flex items-center px-0.5"
+          >
+            <span className={`block h-1.5 rounded-full transition-all ${i === idx ? 'w-6 bg-pink-700' : 'w-1.5 bg-pink-900/20'}`} />
+          </button>
+        ))}
+      </div>
+      <p className="text-center text-xs text-ink/50 mt-0.5" aria-live="polite">{HERO_SLIDES[idx].cam}</p>
     </div>
   )
 }

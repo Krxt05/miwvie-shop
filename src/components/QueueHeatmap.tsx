@@ -1,7 +1,7 @@
 'use client'
 
 // Homepage "ตรวจสอบคิว": one row per model, one cell per day, coloured by how
-// free that model is. Tap a free cell to open the booking page on that day.
+// free that model is. Display only.
 // Data is the anonymous public summary (no names), fetched once the section
 // is near the screen so the hero isn't delayed.
 import Link from 'next/link'
@@ -20,31 +20,24 @@ const DAYS_SHOWN = 90 // matches PUBLIC_DAYS in Code.gs
 const OPEN_FROM = 10
 const OPEN_TO = 22
 
-type Cell = { status: 'free' | 'partial' | 'full' | 'closed' | 'unknown' | 'past'; href?: string }
+type Cell = { status: 'free' | 'partial' | 'full' | 'closed' | 'unknown' | 'past' }
 
 const F_WD = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'narrow' })
 const F_MONTH = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' })
 const bkkDate = (t: number) => new Date(t + 7 * HOUR).toISOString().slice(0, 10)
-const pad = (n: number) => String(n).padStart(2, '0')
 
 // Traffic-light colours so nobody needs the legend: green = free,
-// amber = some hours, grey = taken
+// amber = some hours, grey = taken. Display only — booking is on /book.
 const CELL: Record<Cell['status'], string> = {
-  free: 'bg-emerald-500 hover:bg-emerald-600 text-white',
-  partial: 'bg-amber-300 hover:bg-amber-400 text-amber-900',
+  free: 'bg-emerald-500 text-white',
+  partial: 'bg-amber-300 text-amber-900',
   full: 'bg-ink/[0.07]',
   closed: 'bg-ink/[0.07] bg-[repeating-linear-gradient(45deg,transparent_0_4px,rgba(43,29,31,0.12)_4px_6px)]',
   unknown: 'bg-white ring-1 ring-inset ring-pink-900/10',
   past: 'bg-transparent',
 }
 const LABEL: Record<Cell['status'], string> = {
-  free: 'ว่าง', partial: 'ว่างบางช่วง', full: 'เต็ม', closed: 'ร้านปิด', unknown: 'ตรวจสอบเมื่อจอง', past: 'ผ่านไปแล้ว',
-}
-
-function bookHref(id: string, area: RentalArea, start: number, hours: number) {
-  const d = new Date(start + 7 * HOUR)
-  const when = area === 'provincial' ? bkkDate(start) : `${bkkDate(start)}T${pad(d.getUTCHours())}:00`
-  return `/book?camera=${id}&area=${area}&start=${encodeURIComponent(when)}&hours=${hours}&from=home`
+  free: 'ว่าง', partial: 'ว่างบางช่วง', full: 'เต็ม', closed: 'ร้านปิด', unknown: 'ยังไม่มีข้อมูลคิว', past: 'ผ่านไปแล้ว',
 }
 
 // Provincial: the day is when the parcel arrives; free = the minimum rental
@@ -52,8 +45,8 @@ function bookHref(id: string, area: RentalArea, start: number, hours: number) {
 function provCellFor(q: PublicQueue, free: FreeMap, id: string, day: number, today: number): Cell {
   if (day < today + PROVINCIAL_SHIP_LEAD_DAYS * DAY) return { status: 'past' }
   const r = fitsFast(q, free, id, 'provincial', day, day + MIN_PROVINCIAL_DURATION_HOURS * HOUR)
-  if (r === 'free') return { status: 'free', href: bookHref(id, 'provincial', day, MIN_PROVINCIAL_DURATION_HOURS) }
-  if (r === 'unknown') return { status: 'unknown', href: bookHref(id, 'provincial', day, MIN_PROVINCIAL_DURATION_HOURS) }
+  if (r === 'free') return { status: 'free' }
+  if (r === 'unknown') return { status: 'unknown' }
   return { status: 'full' }
 }
 
@@ -71,18 +64,20 @@ function cellFor(q: PublicQueue, free: FreeMap, id: string, day: number, now: nu
       const s = day + h * HOUR
       if (s < now) continue
       const r = fitsFast(q, free, id, 'local', s, s + len * HOUR)
-      if (r === 'free') return { status: len === 24 ? 'free' : 'partial', href: bookHref(id, 'local', s, len) }
+      if (r === 'free') return { status: len === 24 ? 'free' : 'partial' }
       if (r === 'unknown') unknown = true
     }
+    // A 1-day rental that runs past the data can't be judged — don't call it "some hours"
+    if (unknown) return { status: 'unknown' }
   }
-  return unknown ? { status: 'unknown', href: bookHref(id, 'local', open, 24) } : { status: 'full' }
+  return unknown ? { status: 'unknown' } : { status: 'full' }
 }
 
 export default function QueueHeatmap() {
   const ref = useRef<HTMLDivElement>(null)
   const [q, setQ] = useState<PublicQueue | null>(null)
   const [failed, setFailed] = useState(false)
-  const [page, setPage] = useState(0)
+  const [startIdx, setStartIdx] = useState(0) // first day shown, in days from today
   const [wide, setWide] = useState(false)
   const [area, setArea] = useState<RentalArea>('local')
   const isProv = area === 'provincial'
@@ -98,9 +93,11 @@ export default function QueueHeatmap() {
     return () => mq.removeEventListener('change', on)
   }, [])
   const perPage = wide ? 14 : 7
-  const pages = Math.ceil(DAYS_SHOWN / perPage)
-  const safePage = Math.min(page, pages - 1)
-  const days = Array.from({ length: perPage }, (_, i) => today + (safePage * perPage + i) * DAY)
+  // Kept in days (not page numbers) so rotating a phone doesn't jump to other dates
+  const lastStart = Math.floor((DAYS_SHOWN - 1) / perPage) * perPage
+  const safeStart = Math.min(Math.floor(startIdx / perPage) * perPage, lastStart)
+  const days = Array.from({ length: perPage }, (_, i) => today + (safeStart + i) * DAY)
+  const horizon = today + DAYS_SHOWN * DAY // no data from here on
 
   useEffect(() => {
     const el = ref.current
@@ -122,10 +119,14 @@ export default function QueueHeatmap() {
     return CAMERAS.map((c) => ({
       id: c.id as CameraId,
       name: c.shortName,
-      cells: days.map((d) => (isProv ? provCellFor(q, free, c.id, d, today) : cellFor(q, free, c.id, d, now))),
+      cells: days.map((d): Cell =>
+        d >= horizon ? { status: 'past' }
+          : isProv ? provCellFor(q, free, c.id, d, today)
+          : cellFor(q, free, c.id, d, now)),
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, free, safePage, perPage, isProv])
+  }, [q, free, safeStart, perPage, isProv])
+  const hasUnknown = Boolean(grid?.some((r) => r.cells.some((c) => c.status === 'unknown')))
 
   const first = days[0]
   const last = days[days.length - 1]
@@ -135,7 +136,7 @@ export default function QueueHeatmap() {
 
   return (
     <div ref={ref} className="bg-white rounded-[2rem] ring-1 ring-pink-900/[0.07] p-4 sm:p-6">
-      {/* 1 · where — picked before any cell, so the link goes to the right kind of rental */}
+      {/* where: local and provincial rentals hold a camera differently */}
       <p className="text-sm font-semibold text-ink mb-2">สถานที่รับกล้อง</p>
       <div className="grid grid-cols-2 gap-1 bg-cream rounded-xl p-1" role="tablist" aria-label="พื้นที่เช่า">
         {(['local', 'provincial'] as const).map((a) => (
@@ -158,8 +159,8 @@ export default function QueueHeatmap() {
 
       <div className="flex items-center justify-between mt-4 mb-3">
         <button
-          onClick={() => setPage(Math.max(0, safePage - 1))}
-          disabled={safePage === 0}
+          onClick={() => setStartIdx(Math.max(0, safeStart - perPage))}
+          disabled={safeStart === 0}
           className="w-10 h-10 flex items-center justify-center rounded-full text-pink-700 disabled:text-ink/20"
           aria-label="ช่วงก่อนหน้า"
         >
@@ -167,8 +168,8 @@ export default function QueueHeatmap() {
         </button>
         <p className="text-sm font-semibold text-ink" aria-live="polite">{monthLabel}</p>
         <button
-          onClick={() => setPage(Math.min(pages - 1, safePage + 1))}
-          disabled={safePage === pages - 1}
+          onClick={() => setStartIdx(Math.min(lastStart, safeStart + perPage))}
+          disabled={safeStart === lastStart}
           className="w-10 h-10 flex items-center justify-center rounded-full text-pink-700 disabled:text-ink/20"
           aria-label="ช่วงถัดไป"
         >
@@ -200,14 +201,14 @@ export default function QueueHeatmap() {
       ) : (
         <>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 text-[11px] text-ink/60">
-            {(isProv ? (['free', 'full'] as const) : (['free', 'partial', 'full', 'closed'] as const)).map((s) => (
+            {[...(isProv ? (['free', 'full'] as const) : (['free', 'partial', 'full', 'closed'] as const)), ...(hasUnknown ? (['unknown'] as const) : [])].map((s) => (
               <span key={s} className="flex items-center gap-1.5"><i className={`w-3.5 h-3.5 rounded ${CELL[s]}`} />{LABEL[s]}</span>
             ))}
           </div>
           <p className="mt-2 text-[11px] text-ink/50">
             {isProv
-              ? `ว่าง = เช่า ${MIN_PROVINCIAL_DURATION_HOURS / 24} วันได้ · แตะช่องสีเขียวเพื่อจอง`
-              : 'ว่าง = เช่า 1 วันได้ · ว่างบางช่วง = เช่าได้บางช่วงเวลา · แตะช่องสีเพื่อจอง'}
+              ? `ว่าง = เช่า ${MIN_PROVINCIAL_DURATION_HOURS / 24} วันได้`
+              : 'ว่าง = เช่า 1 วันได้ · ว่างบางช่วง = เช่าได้บางช่วงเวลา'}
           </p>
         </>
       )}
@@ -224,12 +225,10 @@ function Row({ name, cells, days, failed }: { name: string; cells: Cell[] | null
         const base = 'h-9 sm:h-10 mx-0.5 rounded-md transition-colors'
         if (!c) return <span key={d} className={`${base} ${failed ? 'bg-white ring-1 ring-inset ring-pink-900/10' : 'bg-cream animate-pulse'}`} />
         const label = `${name} ${bkkDate(d)} ${LABEL[c.status]}`
-        return c.href ? (
-          <Link key={d} href={c.href} aria-label={`${label} — แตะเพื่อจอง`} title={LABEL[c.status]} className={`${base} ${CELL[c.status]} flex items-center justify-center`}>
+        return (
+          <span key={d} role="img" aria-label={label} title={LABEL[c.status]} className={`${base} ${CELL[c.status]} flex items-center justify-center`}>
             {c.status === 'free' && <Check size={16} strokeWidth={3} aria-hidden />}
-          </Link>
-        ) : (
-          <span key={d} aria-label={label} title={LABEL[c.status]} className={`${base} ${CELL[c.status]}`} />
+          </span>
         )
       })}
     </>
