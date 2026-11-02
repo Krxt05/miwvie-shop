@@ -1,26 +1,19 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import {
   Instagram,
   ArrowRight,
   ArrowUpRight,
   Plus,
-  Clock,
-  Banknote,
-  UserCheck,
   MapPin,
   Bike,
   Package,
-  BatteryFull,
-  PlugZap,
-  Briefcase,
-  MemoryStick,
-  Usb,
-  Backpack,
   ClipboardList,
+  MessageCircle,
 } from 'lucide-react'
 import {
   CAMERAS,
@@ -34,11 +27,18 @@ import {
   DELIVERY_HOURS_LABEL,
   SHOP_MAP_URL,
   LOCAL_DELIVERY_FEE,
+  LINE_URL,
 } from '@/lib/cameras'
-import { CameraId, PriceTable } from '@/types'
+import { PriceTable } from '@/types'
+
+// Loaded after the page is up (and only fetches once scrolled near), so the
+// hero and first paint don't wait on it — the homepage had iPhone jank before.
+const AvailabilitySection = dynamic(() => import('@/components/AvailabilitySection'), {
+  ssr: false,
+  loading: () => <div className="bg-white rounded-[2rem] ring-1 ring-pink-900/[0.07] min-h-[640px]" />,
+})
 
 const IG_URL = 'https://www.instagram.com/miwvie_shop/'
-const WINE_BG = 'radial-gradient(120% 100% at 80% 0%, #8E3A4C 0%, #6E1F31 45%, #45121F 100%)'
 
 const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
 // The general "book now" buttons carry a query string like the camera-card
@@ -49,8 +49,6 @@ const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
 const BOOK_HREF = '/book?from=home'
 
 const TOTAL_UNITS = CAMERAS.reduce((n, c) => n + c.quantity, 0)
-
-const ACCESSORY_ICONS = [BatteryFull, PlugZap, Briefcase, MemoryStick, Usb, Backpack]
 
 const DURATIONS: { label: string; key: keyof PriceTable; days: number }[] = [
   { label: '6 ชม.', key: 'hourly6', days: 0.25 },
@@ -63,25 +61,37 @@ const DURATIONS: { label: string; key: keyof PriceTable; days: number }[] = [
   { label: '7 วัน', key: 'day7', days: 7 },
 ]
 
-// Ordered by how much the shop wants each model seen: 30s → 10s → 930 IS → 510 IS → 200.
-// The first one runs large.
+// One-line summary shown above the (collapsed) price table, e.g. "กลุ่ม A 110–750฿"
+const PRICE_SUMMARY = (['A', 'B'] as const).map((g) => {
+  const v = DURATIONS.map((d) => PRICE_TABLES[g][d.key])
+  return `กลุ่ม ${g} ${Math.min(...v)}–${Math.max(...v)}฿`
+})
+
+// Sticky chip nav on phones (anchor links only)
+const SECTION_LINKS = [
+  { href: '#availability', label: 'คิวว่าง' },
+  { href: '#cameras', label: 'กล้อง' },
+  { href: '#pricing', label: 'ราคา' },
+  { href: '#pickup', label: 'รับกล้อง' },
+  { href: '#faq', label: 'FAQ' },
+]
+
+// Sections sit under a sticky header: 56px bar + 56px chip row on phones, 64px on md+
+const SCROLL_MT = 'scroll-mt-[120px] md:scroll-mt-20'
+
+// One shot per model, in the order the shop wants them seen: 30s → 10s → 930 IS → 510 IS → 200.
 const GALLERY = [
   { src: '/mood/ixy30s-1.jpg', cam: 'IXY 30s' },
-  { src: '/mood/ixy30s-2.jpg', cam: 'IXY 30s' },
-  { src: '/mood/ixy30s-4.jpg', cam: 'IXY 30s' },
   { src: '/mood/ixy10s-1.jpg', cam: 'IXY 10s' },
-  { src: '/mood/ixy10s-3.jpg', cam: 'IXY 10s' },
   { src: '/mood/ixy930is-1.jpg', cam: 'IXY 930 IS' },
-  { src: '/mood/ixy930is-3.jpg', cam: 'IXY 930 IS' },
   { src: '/mood/ixy510is-1.jpg', cam: 'IXY 510 IS' },
   { src: '/mood/ixy200-1.jpg', cam: 'IXY 200' },
 ]
 
 const STEPS = [
-  { title: 'เลือกกล้อง & เวลา', desc: 'ดูคิวว่างแบบเรียลไทม์ เลือกวันและเวลารับได้เลย' },
-  { title: 'กรอกข้อมูล', desc: 'แนบรูปบัตรประชาชน (ปิดเลขได้) + แคปโปรไฟล์ IG/FB' },
-  { title: 'โอน & ส่งสลิป', desc: 'สแกน PromptPay เต็มจำนวน ไม่มีมัดจำ แล้วส่งสลิปทาง IG' },
-  { title: 'รับกล้องไปถ่าย', desc: 'รับเองฟรี หรือให้ร้านส่งถึงที่ เริ่มนับ 24 ชม. จากเวลารับจริง' },
+  { title: 'เลือกวัน แล้วจอง', desc: 'ดูคิวว่าง เลือกรุ่นและเวลารับ กรอกข้อมูลจองได้เลย' },
+  { title: 'โอนเต็ม ไม่มีมัดจำ', desc: 'สแกน PromptPay แนบสลิป พร้อมรูปบัตรประชาชน (ปิดเลขได้) + โปรไฟล์ IG/FB' },
+  { title: 'รับกล้องไปถ่าย', desc: 'รับเองฟรีหรือให้ร้านส่ง นับ 24 ชม. จากเวลารับจริง' },
 ]
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
@@ -98,6 +108,10 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     ),
   },
   {
+    q: 'ในกระเป๋ามีอะไรบ้าง?',
+    a: `ทุกการเช่าได้อุปกรณ์ครบชุด: ${INCLUDED_ACCESSORIES.join(' · ')}`,
+  },
+  {
     q: 'ต้องใช้เอกสารอะไรบ้าง?',
     a: 'รูปบัตรประชาชน (ปิดเลขบัตรได้) และแคปหน้าโปรไฟล์ IG หรือ Facebook ที่ยืนยันได้ว่าเป็นคนเดียวกัน',
   },
@@ -107,7 +121,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: 'ต้องวางมัดจำไหม?',
-    a: 'ไม่มีมัดจำ ชำระค่าเช่าเต็มจำนวนผ่าน PromptPay แล้วส่งสลิปมาที่ IG @miwvie_shop',
+    a: 'ไม่มีมัดจำ ชำระค่าเช่าเต็มจำนวนผ่าน PromptPay แล้วส่งสลิปมาที่ IG @miwvie_shop หรือ LINE ร้าน',
   },
   {
     q: 'อยู่ต่างจังหวัดเช่าได้ไหม?',
@@ -123,45 +137,63 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
 ]
 
-const reveal = {
-  initial: { opacity: 0, y: 24 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-60px' },
-  transition: { duration: 0.6, ease: 'easeOut' },
-} as const
+const PICKUP = [
+  {
+    icon: MapPin,
+    title: 'รับ-คืนเองที่ร้าน',
+    sub: 'หอพักเมธาเรสสิเดนท์ 3 ซอยวุ่นวาย มมส.',
+    price: 'ฟรี',
+    link: { href: SHOP_MAP_URL, label: 'แผนที่' },
+  },
+  {
+    icon: Bike,
+    title: 'ส่ง-รับถึงที่',
+    sub: `ในเขต มมส. ม.ใหม่ · ${DELIVERY_HOURS_LABEL} น.`,
+    price: `${LOCAL_DELIVERY_FEE}฿`,
+    unit: '/เที่ยว',
+  },
+  {
+    icon: Package,
+    title: 'ส่งต่างจังหวัด',
+    sub: `เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน · จองล่วงหน้า ${PROVINCIAL_SHIP_LEAD_DAYS} วัน · ขากลับส่งคืนเอง`,
+    price: `${PROVINCIAL_SHIPPING_FEE}฿`,
+    unit: 'ขาไป',
+  },
+]
+
+const HIDE_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+
 
 export default function Home() {
-  const [calcCam, setCalcCam] = useState<CameraId>(CAMERAS[0].id)
-  const [calcDur, setCalcDur] = useState<keyof PriceTable>('day1')
   const [showBar, setShowBar] = useState(false)
+  const heroCtaRef = useRef<HTMLDivElement>(null)
 
-  // Mobile booking bar appears once the hero's own buttons are scrolled away
+  // Mobile booking bar appears once the hero's own buttons have scrolled up out of view
   useEffect(() => {
-    const onScroll = () => setShowBar(window.scrollY > 640)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    const el = heroCtaRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => {
+      setShowBar(!e.isIntersecting && e.boundingClientRect.top < 0)
+    })
+    io.observe(el)
+    return () => io.disconnect()
   }, [])
 
-  const cam = CAMERAS.find((c) => c.id === calcCam) ?? CAMERAS[0]
-  const dur = DURATIONS.find((d) => d.key === calcDur) ?? DURATIONS[1]
-  const price = PRICE_TABLES[cam.priceGroup][dur.key]
-  const original = ORIGINAL_PRICE_TABLES[cam.priceGroup][dur.key]
-
   return (
-    <main className="min-h-screen overflow-x-hidden bg-cream text-ink">
-      {/* ───────── Nav ───────── */}
-      <nav className="sticky top-0 z-40 bg-cream/80 backdrop-blur-lg border-b border-pink-900/10">
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 h-16 max-w-6xl mx-auto">
+    <main className="min-h-screen overflow-x-clip bg-cream text-ink">
+      {/* ───────── Header (+ chip nav on phones) ───────── */}
+      <header className="sticky top-0 z-40 bg-cream/95 md:bg-cream/80 md:backdrop-blur-lg border-b border-pink-900/10">
+        <nav className="flex items-center justify-between gap-3 px-4 sm:px-6 h-14 md:h-16 max-w-6xl mx-auto">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">
             <Image src="/logo.png" alt="" width={36} height={36} className="rounded-full shrink-0" />
             <span className="font-display text-xl font-bold tracking-wide text-pink-700 max-[379px]:hidden">MIWVIE</span>
           </Link>
-          <div className="hidden md:flex items-center gap-8 text-sm text-ink/70">
-            <a href="#cameras" className="hover:text-pink-700 transition-colors">กล้อง</a>
-            <a href="#pricing" className="hover:text-pink-700 transition-colors">ราคา</a>
-            <a href="#how" className="hover:text-pink-700 transition-colors">วิธีจอง</a>
-            <a href="#faq" className="hover:text-pink-700 transition-colors">คำถาม</a>
+          <div className="hidden md:flex items-center gap-7 text-sm text-ink/70">
+            {SECTION_LINKS.map((l) => (
+              <a key={l.href} href={l.href} className="hover:text-pink-700 transition-colors">
+                {l.label}
+              </a>
+            ))}
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <a
@@ -188,8 +220,19 @@ export default function Home() {
               จองคิว <ArrowRight size={15} />
             </Link>
           </div>
+        </nav>
+        <div className={`md:hidden flex gap-2 overflow-x-auto px-4 pb-2 pt-0.5 ${HIDE_SCROLLBAR}`} aria-label="ไปที่หัวข้อ">
+          {SECTION_LINKS.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="shrink-0 inline-flex items-center h-10 px-4 rounded-full bg-white text-sm text-ink/80 ring-1 ring-pink-900/10 active:bg-pink-50"
+            >
+              {l.label}
+            </a>
+          ))}
         </div>
-      </nav>
+      </header>
 
       {/* ───────── Hero ───────── */}
       <section className="relative">
@@ -197,7 +240,7 @@ export default function Home() {
           className="absolute inset-0 pointer-events-none"
           style={{ background: 'radial-gradient(60% 60% at 85% 20%, rgba(140,43,63,0.10), transparent 70%)' }}
         />
-        <div className="relative grid lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-8 items-center px-4 sm:px-6 pt-10 sm:pt-14 lg:pt-20 pb-16 lg:pb-24 max-w-6xl mx-auto">
+        <div className="relative grid lg:grid-cols-[1.05fr_1fr] gap-7 lg:gap-8 items-center px-4 sm:px-6 pt-6 sm:pt-14 lg:pt-20 pb-10 lg:pb-24 max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -207,61 +250,46 @@ export default function Home() {
               <span className="w-6 h-px bg-pink-700/50" />
               Canon IXY · Camera Rental · มมส.
             </p>
-            <h1 className="font-display text-[2.35rem] leading-[1.2] sm:text-6xl sm:leading-[1.15] lg:text-[3.4rem] xl:text-6xl font-bold mt-5 text-ink">
+            <h1 className="font-display text-[2.35rem] leading-[1.2] sm:text-6xl sm:leading-[1.15] lg:text-[3.4rem] xl:text-6xl font-bold mt-3 sm:mt-5 text-ink">
               <span className="whitespace-nowrap">เช่ากล้องดิจิตอล</span>
               <br />
               <span className="whitespace-nowrap">
                 <span className="italic text-pink-700">โทน Y2K</span> สวยทุกช็อต
               </span>
             </h1>
-            <p className="text-ink/65 text-base sm:text-lg mt-6 max-w-md leading-relaxed">
-              Canon IXY {CAMERAS.length} รุ่น พร้อมอุปกรณ์ครบชุด เช่าเริ่มต้น {MIN_PRICE} บาท
-              นับ 24 ชม. จากเวลารับจริง ไม่มีมัดจำ
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 mt-8">
+            <ul className="flex flex-wrap gap-2 mt-4 sm:mt-6">
+              {[`เริ่ม ${MIN_PRICE}฿`, 'ไม่มีมัดจำ', 'รับฟรีที่ มมส.'].map((t) => (
+                <li key={t} className="rounded-full bg-white ring-1 ring-pink-900/10 px-3.5 py-1.5 text-sm text-ink/80">
+                  {t}
+                </li>
+              ))}
+            </ul>
+            <div ref={heroCtaRef} className="grid grid-cols-2 sm:flex gap-3 mt-5 sm:mt-8">
+              <a
+                href="#availability"
+                className="group inline-flex items-center justify-center gap-2 bg-pink-700 text-cream font-medium rounded-full px-5 sm:px-7 py-3.5 sm:py-4 text-base hover:bg-pink-600 transition-all shadow-[0_10px_30px_-10px_rgba(110,31,49,0.7)]"
+              >
+                เช็กคิวว่าง
+                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              </a>
               <Link
                 href={BOOK_HREF}
-                className="group inline-flex items-center justify-center gap-2 bg-pink-700 text-cream font-medium rounded-full px-7 py-4 text-base hover:bg-pink-600 transition-all shadow-[0_10px_30px_-10px_rgba(110,31,49,0.7)]"
+                className="inline-flex items-center justify-center gap-2 rounded-full px-5 sm:px-7 py-3.5 sm:py-4 text-base text-ink border border-ink/15 hover:border-ink/40 transition-colors"
               >
-                เช็กคิวว่าง & จองเลย
-                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                จองเลย
               </Link>
-              <a
-                href="#pricing"
-                className="inline-flex items-center justify-center gap-2 rounded-full px-7 py-4 text-base text-ink border border-ink/15 hover:border-ink/40 transition-colors"
-              >
-                คำนวณราคา
-              </a>
             </div>
-
-            <dl className="grid grid-cols-3 mt-10 pt-8 border-t border-ink/10 max-w-md">
-              {[
-                { v: `${MIN_PRICE}฿`, l: 'เริ่มต้น / 6 ชม.' },
-                { v: '0฿', l: 'ไม่มีมัดจำ' },
-                { v: '10%', l: 'ส่งรูปรีวิว 4 รูป', sub: 'รับส่วนลดเช่าครั้งต่อไป' },
-              ].map((s, i) => (
-                <div key={s.l} className={i > 0 ? 'pl-4 sm:pl-6 border-l border-ink/10' : ''}>
-                  <dt className="font-display text-3xl sm:text-4xl text-pink-700">{s.v}</dt>
-                  <dd className="text-xs sm:text-sm text-ink/55 mt-1">
-                    {s.l}
-                    {'sub' in s && <span className="block text-[11px] sm:text-xs text-ink/45 mt-0.5 leading-snug">{s.sub}</span>}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <p className="text-xs sm:text-sm text-ink/50 mt-3 sm:mt-4">
+              Canon IXY {CAMERAS.length} รุ่น อุปกรณ์ครบชุด · ส่งรูปรีวิว 4 รูป รับส่วนลด 10% ครั้งถัดไป
+            </p>
           </motion.div>
 
-          {/* Visual: arched photo + a second print + the camera that took it */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.9, ease: 'easeOut', delay: 0.1 }}
-            className="relative mx-auto w-full max-w-[400px] lg:max-w-[440px] aspect-[4/5]"
-          >
-            <div className="absolute inset-y-0 right-0 w-[78%] rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
-              <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, 80vw" className="object-cover" />
+          {/* Visual: photo + a second print + the camera that took it (shorter on phones) */}
+          <div className="relative mx-auto w-full max-md:aspect-[5/3] md:max-w-[400px] lg:max-w-[440px] md:aspect-[4/5]">
+            <div className="absolute inset-y-0 right-0 w-full md:w-[78%] rounded-[1.75rem] md:rounded-b-none md:rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
+              <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, (min-width:768px) 320px, 92vw" className="object-cover max-md:object-[50%_40%]" />
             </div>
-            <div className="absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
+            <div className="hidden md:block absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
               <div className="relative aspect-[3/4]">
                 <Image src="/mood/ixy30s-2.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill sizes="180px" className="object-cover" />
               </div>
@@ -272,174 +300,96 @@ export default function Home() {
               alt=""
               width={522}
               height={460}
-              className="absolute -bottom-6 right-[-4%] w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
+              className="absolute -bottom-4 md:-bottom-6 right-[-2%] md:right-[-4%] w-[34%] md:w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
             />
             <div
-              className="absolute top-[6%] left-[4%] w-24 h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
+              className="absolute top-3 left-3 md:top-[6%] md:left-[4%] w-16 h-16 md:w-24 md:h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
               style={{ background: 'radial-gradient(circle at 35% 30%, #EBD39B, #C9A45C 60%, #A07D3B)' }}
             >
-              <span className="text-[10px] font-semibold">รีวิวรับ</span>
-              <span className="font-display text-3xl font-bold leading-none">10%</span>
-              <span className="text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
+              <span className="text-[8px] md:text-[10px] font-semibold">รีวิวรับ</span>
+              <span className="font-display text-xl md:text-3xl font-bold leading-none">10%</span>
+              <span className="text-[7px] md:text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* ───────── Marquee ───────── */}
-      <div className="bg-pink-800 text-cream/90 py-3.5 overflow-hidden select-none" aria-hidden>
-        <div className="flex w-max animate-marquee motion-reduce:animate-none">
-          {[0, 1].map((k) => (
-            <div key={k} className="flex shrink-0">
-              {[...CAMERAS.map((c) => c.shortName), 'อุปกรณ์ครบชุด', 'ไม่มีมัดจำ', 'รับฟรีที่ มมส.'].map((t) => (
-                <span key={t} className="font-display italic text-lg px-6 whitespace-nowrap">
-                  {t} <span className="text-brass not-italic ml-6">✦</span>
-                </span>
-              ))}
-            </div>
-          ))}
+      {/* ───────── Availability ───────── */}
+      <section id="availability" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-3xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="Availability" title="เช็กคิวว่าง" aside="เลือกวัน ดูรุ่นที่ว่าง แล้วจองต่อได้เลย" />
+        <div className="min-h-[640px]">
+          <AvailabilitySection />
         </div>
-      </div>
+      </section>
 
       {/* ───────── Cameras ───────── */}
-      <section id="cameras" className="px-4 sm:px-6 py-20 sm:py-28 max-w-6xl mx-auto scroll-mt-16">
-        <SectionHead
-          eyebrow="The Collection"
-          title="เลือกรุ่นที่ใช่"
-          aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว`}
-        />
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-          {CAMERAS.map((c, i) => {
-            return (
-              <motion.div key={c.id} {...reveal} transition={{ ...reveal.transition, delay: i * 0.06 }}>
-                <Link
-                  href={`/book?camera=${c.id}`}
-                  className="group flex flex-col h-full bg-white rounded-2xl overflow-hidden ring-1 ring-pink-900/[0.07] hover:ring-pink-700/30 hover:shadow-[0_20px_40px_-20px_rgba(69,18,31,0.35)] transition-all duration-300"
-                >
-                  <div
-                    className="relative aspect-[4/5] flex items-center justify-center p-4"
-                    style={{ background: `radial-gradient(70% 60% at 50% 55%, ${c.color}26, transparent 75%), #FBF7F4` }}
-                  >
-                    <Image
-                      src={c.image}
-                      alt={c.name}
-                      fill
-                      sizes="(min-width:1024px) 220px, (min-width:768px) 30vw, 45vw"
-                      className="object-contain p-5 sm:p-6 drop-shadow-[0_14px_16px_rgba(46,12,21,0.3)] group-hover:scale-[1.06] group-hover:-rotate-2 transition-transform duration-500"
-                    />
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-end text-[11px]">
-                      {c.quantity > 1 && (
-                        <span className="bg-pink-700 text-cream rounded-full px-2 py-0.5 font-medium">{c.quantity} ตัว</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="p-4 flex flex-col flex-1">
-                    <p className="font-display text-xl leading-tight">{c.shortName}</p>
-                    <div className="flex items-center gap-1.5 mt-2" aria-label={`สี ${c.colorways.map((x) => x.name).join(' ')}`}>
-                      {c.colorways.map((x) => (
-                        <span key={x.name} title={x.name} className="w-3 h-3 rounded-full ring-1 ring-black/10" style={{ background: x.hex }} />
-                      ))}
-                      <span className="text-xs text-ink/50 ml-1">{c.colorways.map((x) => x.name).join(' · ')}</span>
-                    </div>
-                    <div className="mt-auto pt-4 flex items-end justify-between">
-                      <p>
-                        <span className="text-lg font-semibold">{PRICE_TABLES[c.priceGroup].day1}฿</span>
-                        <span className="text-xs text-ink/50"> /วัน</span>
-                      </p>
-                      <span className="w-8 h-8 rounded-full bg-pink-50 text-pink-700 flex items-center justify-center group-hover:bg-pink-700 group-hover:text-cream transition-colors">
-                        <ArrowUpRight size={16} />
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              </motion.div>
-            )
-          })}
+      <section id="cameras" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="The Collection" title="เลือกรุ่นที่ใช่" aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว · ปัดดูได้`} />
+        <div
+          className={`-mx-4 px-4 flex gap-3 overflow-x-auto snap-x snap-mandatory md:mx-0 md:px-0 md:grid md:grid-cols-3 lg:grid-cols-5 md:gap-4 md:overflow-visible ${HIDE_SCROLLBAR}`}
+        >
+          {CAMERAS.map((c) => (
+            <Link
+              key={c.id}
+              href={`/book?camera=${c.id}`}
+              className="group snap-start shrink-0 w-[44%] md:w-auto flex flex-col bg-white rounded-2xl overflow-hidden ring-1 ring-pink-900/[0.07] hover:ring-pink-700/30 hover:shadow-[0_20px_40px_-20px_rgba(69,18,31,0.35)] transition-all duration-300"
+            >
+              <div
+                className="relative aspect-square md:aspect-[4/5] flex items-center justify-center"
+                style={{ background: `radial-gradient(70% 60% at 50% 55%, ${c.color}26, transparent 75%), #FBF7F4` }}
+              >
+                <Image
+                  src={c.image}
+                  alt={c.name}
+                  fill
+                  sizes="(min-width:1024px) 220px, (min-width:768px) 30vw, 45vw"
+                  className="object-contain p-4 sm:p-6 drop-shadow-[0_14px_16px_rgba(46,12,21,0.3)] group-hover:scale-[1.06] group-hover:-rotate-2 transition-transform duration-500"
+                />
+                {c.quantity > 1 && (
+                  <span className="absolute top-2.5 right-2.5 bg-pink-700 text-cream rounded-full px-2 py-0.5 text-[11px] font-medium">
+                    {c.quantity} ตัว
+                  </span>
+                )}
+              </div>
+              <div className="p-3 sm:p-4 flex flex-col flex-1">
+                <p className="font-display text-lg sm:text-xl leading-tight">{c.shortName}</p>
+                <div className="flex items-center gap-1.5 mt-1.5" aria-label={`สี ${c.colorways.map((x) => x.name).join(' ')}`}>
+                  {c.colorways.map((x) => (
+                    <span key={x.name} title={x.name} className="w-3 h-3 rounded-full ring-1 ring-black/10" style={{ background: x.hex }} />
+                  ))}
+                  <span className="text-xs text-ink/50 ml-1 truncate">{c.colorways.map((x) => x.name).join(' · ')}</span>
+                </div>
+                <div className="mt-auto pt-3 flex items-end justify-between">
+                  <p>
+                    <span className="text-base sm:text-lg font-semibold">{PRICE_TABLES[c.priceGroup].day1}฿</span>
+                    <span className="text-xs text-ink/50"> /วัน</span>
+                  </p>
+                  <span className="w-8 h-8 rounded-full bg-pink-50 text-pink-700 flex items-center justify-center group-hover:bg-pink-700 group-hover:text-cream transition-colors">
+                    <ArrowUpRight size={16} />
+                  </span>
+                </div>
+              </div>
+            </Link>
+          ))}
         </div>
       </section>
 
-      {/* ───────── Pricing calculator ───────── */}
-      <section id="pricing" className="px-4 sm:px-6 pb-20 sm:pb-28 max-w-6xl mx-auto scroll-mt-16">
-        <motion.div {...reveal} className="rounded-[2rem] overflow-hidden text-cream grid lg:grid-cols-[1.2fr_1fr]" style={{ background: WINE_BG }}>
-          <div className="p-6 sm:p-10">
-            <p className="text-xs tracking-[0.2em] uppercase text-brass-light/80">Price Calculator</p>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold mt-3">คำนวณค่าเช่า</h2>
-
-            <p className="text-sm text-cream/60 mt-8 mb-3">กล้อง</p>
-            <div className="flex flex-wrap gap-2">
-              {CAMERAS.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setCalcCam(c.id)}
-                  className={`rounded-full px-4 py-2 text-sm transition-all ${
-                    calcCam === c.id ? 'bg-cream text-pink-800 font-semibold' : 'bg-white/10 text-cream/80 hover:bg-white/20'
-                  }`}
-                >
-                  {c.shortName}
-                </button>
-              ))}
-            </div>
-
-            <p className="text-sm text-cream/60 mt-6 mb-3">ระยะเวลา</p>
-            <div className="grid grid-cols-4 gap-2">
-              {DURATIONS.map((d) => (
-                <button
-                  key={d.key}
-                  onClick={() => setCalcDur(d.key)}
-                  className={`rounded-xl py-2.5 text-sm transition-all ${
-                    calcDur === d.key ? 'bg-brass text-pink-900 font-semibold' : 'bg-white/10 text-cream/80 hover:bg-white/20'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-black/15 p-6 sm:p-10 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10">
-            <div>
-              <p className="text-sm text-cream/60">
-                {cam.shortName} · {dur.label}
-              </p>
-              <div className="flex items-baseline gap-3 mt-2">
-                <motion.span
-                  key={`${calcCam}-${calcDur}`}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="font-display text-6xl sm:text-7xl font-bold"
-                >
-                  {price}
-                </motion.span>
-                <span className="text-2xl text-cream/70">฿</span>
-              </div>
-              <p className="mt-3 text-sm">
-                <span className="line-through text-cream/40 mr-2">{original}฿</span>
-                <span className="inline-block bg-brass/20 text-brass-light rounded-full px-2.5 py-0.5">
-                  ประหยัด {original - price}฿
-                </span>
-              </p>
-              {dur.days >= 2 && (
-                <p className="text-sm text-cream/55 mt-3">เฉลี่ยวันละ {Math.round(price / dur.days)}฿</p>
-              )}
-              <p className="text-xs text-cream/45 mt-6 leading-relaxed">
-                เกิน 7 วัน +{EXTRA_DAY_RATE[cam.priceGroup]}฿/วัน · ค่า Delivery แยก {LOCAL_DELIVERY_FEE}฿/เที่ยว · ส่งรูปรีวิว 4 รูปขึ้นไป รับโค้ดลด 10% เช่าครั้งต่อไป
-              </p>
-            </div>
-            <Link
-              href={`/book?camera=${cam.id}`}
-              className="group mt-8 inline-flex items-center justify-center gap-2 bg-cream text-pink-800 font-semibold rounded-full px-6 py-4 hover:bg-white transition-colors"
-            >
-              จอง {cam.shortName}
-              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </div>
-        </motion.div>
-
-        {/* Full table, tucked away for people who want to compare everything */}
-        <details className="group mt-4 bg-white rounded-2xl ring-1 ring-pink-900/[0.07]">
-          <summary className="flex items-center justify-between cursor-pointer list-none px-6 py-4 font-medium [&::-webkit-details-marker]:hidden">
-            ดูตารางราคาทั้งหมด
-            <Plus size={18} className="text-pink-700 transition-transform group-open:rotate-45" />
+      {/* ───────── Price table ───────── */}
+      <section id="pricing" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="Pricing" title="ราคาเช่า" />
+        {/* Full table, collapsed by default ("เช็กคิวว่าง" shows the price for the chosen dates) */}
+        <details className="group bg-white rounded-2xl ring-1 ring-pink-900/[0.07]">
+          <summary className="flex items-center justify-between gap-4 cursor-pointer list-none px-5 sm:px-6 py-4 [&::-webkit-details-marker]:hidden">
+            <span>
+              <span className="block text-sm sm:text-base font-medium">
+                {PRICE_SUMMARY.join(' · ')} · ค่าส่ง {LOCAL_DELIVERY_FEE}฿/เที่ยว
+              </span>
+              <span className="block text-xs text-ink/50 mt-0.5">
+                <span className="group-open:hidden">แตะดูตารางราคาทั้งหมด</span>
+                <span className="hidden group-open:inline">ส่งต่างจังหวัด +{PROVINCIAL_SHIPPING_FEE}฿ (ขาไป)</span>
+              </span>
+            </span>
+            <Plus size={18} className="text-pink-700 shrink-0 transition-transform group-open:rotate-45" />
           </summary>
           <div className="px-4 sm:px-6 pb-6 overflow-x-auto">
             <table className="w-full text-right text-sm sm:text-base">
@@ -480,78 +430,45 @@ export default function Home() {
         </details>
       </section>
 
-      {/* ───────── Pickup options + what's included ───────── */}
-      <section className="bg-white/60 border-y border-pink-900/[0.06]">
-        <div className="px-4 sm:px-6 py-20 sm:py-28 max-w-6xl mx-auto">
-          <SectionHead eyebrow="Pickup & Delivery" title="รับกล้องได้ 3 แบบ" />
-          <div className="grid md:grid-cols-3 gap-4">
-            <OptionCard
-              icon={MapPin}
-              title="รับ-คืนเองที่ร้าน"
-              price="ฟรี"
-              lines={['หอพักเมธาเรสสิเดนท์ 3', 'ซอยวุ่นวาย มมส.']}
-              link={{ href: SHOP_MAP_URL, label: 'เปิดแผนที่' }}
-              featured
-            />
-            <OptionCard
-              icon={Bike}
-              title="ส่ง-รับถึงที่"
-              price={`${LOCAL_DELIVERY_FEE}฿`}
-              unit="/เที่ยว"
-              lines={['ในเขต มมส. ม.ใหม่', `ช่วง ${DELIVERY_HOURS_LABEL} น.`]}
-            />
-            <OptionCard
-              icon={Package}
-              title="ส่งต่างจังหวัด"
-              price={`${PROVINCIAL_SHIPPING_FEE}฿`}
-              unit="ขาไป"
-              lines={[
-                `เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน · จองล่วงหน้า ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`,
-                'ขากลับลูกค้าส่งคืนเอง',
-              ]}
-            />
-          </div>
-
-          <div className="grid lg:grid-cols-[1.4fr_1fr] gap-4 mt-4">
-            <div className="bg-cream rounded-2xl p-6 sm:p-8">
-              <h3 className="font-display text-2xl font-bold">ในกระเป๋ามีอะไรบ้าง</h3>
-              <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-5 mt-6">
-                {INCLUDED_ACCESSORIES.map((label, i) => {
-                  const Icon = ACCESSORY_ICONS[i] ?? Package
-                  return (
-                    <li key={label} className="flex items-center gap-3 text-sm">
-                      <span className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0 ring-1 ring-pink-900/[0.06]">
-                        <Icon size={19} className="text-pink-700" strokeWidth={1.75} />
-                      </span>
-                      {label}
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-            <div className="bg-cream rounded-2xl p-6 sm:p-8">
-              <h3 className="font-display text-2xl font-bold">เงื่อนไขการเช่า</h3>
-              <ul className="space-y-4 mt-6 text-sm">
-                <li className="flex gap-3">
-                  <Clock size={18} className="text-pink-700 shrink-0 mt-0.5" />
-                  นับ 24 ชม. จากเวลารับกล้องจริง
-                </li>
-                <li className="flex gap-3">
-                  <Banknote size={18} className="text-pink-700 shrink-0 mt-0.5" />
-                  ชำระเต็มจำนวน ไม่มีมัดจำ
-                </li>
-                <li className="flex gap-3">
-                  <UserCheck size={18} className="text-pink-700 shrink-0 mt-0.5" />
-                  บัตรประชาชน + โปรไฟล์ IG/FB ยืนยันตัวตน
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
+      {/* ───────── Pickup options ───────── */}
+      <section id="pickup" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="Pickup & Delivery" title="รับกล้องได้ 3 แบบ" />
+        <ul className="bg-white rounded-2xl ring-1 ring-pink-900/[0.07] divide-y divide-ink/[0.06] md:grid md:grid-cols-3 md:divide-y-0 md:divide-x">
+          {PICKUP.map((o, i) => {
+            const Icon = o.icon
+            return (
+              <li key={o.title} className="flex items-center gap-3.5 px-4 sm:px-6 py-3.5 sm:py-5">
+                <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${i === 0 ? 'bg-pink-700 text-cream' : 'bg-cream text-pink-700'}`}>
+                  <Icon size={19} strokeWidth={1.75} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-[15px]">
+                    {o.title}
+                    {o.link && (
+                      <a
+                        href={o.link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 inline-flex items-center gap-0.5 text-xs font-medium text-pink-700 underline underline-offset-2"
+                      >
+                        {o.link.label} <ArrowUpRight size={12} />
+                      </a>
+                    )}
+                  </p>
+                  <p className="text-xs text-ink/55 leading-snug mt-0.5">{o.sub}</p>
+                </div>
+                <p className="text-right shrink-0 leading-tight">
+                  <span className={`font-display text-xl font-bold ${i === 0 ? 'text-pink-700' : ''}`}>{o.price}</span>
+                  {o.unit && <span className="block text-[11px] text-ink/50">{o.unit}</span>}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
       </section>
 
       {/* ───────── Gallery ───────── */}
-      <section className="px-4 sm:px-6 py-20 sm:py-28 max-w-6xl mx-auto">
+      <section className="px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto">
         <SectionHead
           eyebrow="Shot on IXY"
           title="ภาพจากกล้องจริง"
@@ -561,67 +478,50 @@ export default function Home() {
             </a>
           }
         />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-          {GALLERY.map((g, i) => (
-            <motion.figure
-              key={g.src}
-              {...reveal}
-              transition={{ ...reveal.transition, delay: (i % 4) * 0.05 }}
-              className={`group relative overflow-hidden rounded-xl bg-pink-100 ${
-                i === 0 ? 'col-span-2 aspect-[3/4] md:aspect-auto md:row-span-2' : 'aspect-[3/4]'
-              }`}
-            >
+        <div className={`-mx-4 px-4 flex gap-2 sm:gap-3 overflow-x-auto snap-x snap-mandatory md:mx-0 md:px-0 md:grid md:grid-cols-5 md:overflow-visible ${HIDE_SCROLLBAR}`}>
+          {GALLERY.map((g) => (
+            <figure key={g.src} className="group relative snap-start shrink-0 w-[40%] md:w-auto aspect-[3/4] overflow-hidden rounded-xl bg-pink-100">
               <Image
                 src={g.src}
                 alt={`ภาพถ่ายจาก ${g.cam}`}
                 fill
-                sizes={i === 0 ? '(min-width:768px) 50vw, 100vw' : '(min-width:768px) 25vw, 50vw'}
+                sizes="(min-width:768px) 20vw, 40vw"
                 className="object-cover group-hover:scale-105 transition-transform duration-700"
               />
-              <figcaption className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/50 to-transparent text-white text-xs font-medium">
+              <figcaption className="absolute bottom-0 inset-x-0 p-2.5 bg-gradient-to-t from-black/50 to-transparent text-white text-xs font-medium">
                 {g.cam}
               </figcaption>
-            </motion.figure>
+            </figure>
           ))}
         </div>
       </section>
 
       {/* ───────── How it works ───────── */}
-      <section id="how" className="px-4 sm:px-6 pb-20 sm:pb-28 max-w-6xl mx-auto scroll-mt-16">
-        <SectionHead eyebrow="How it works" title="จองง่าย ใน 4 ขั้นตอน" />
-        <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6">
+      <section id="how" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="How it works" title="จองง่าย 3 ขั้นตอน" />
+        <ol className="grid md:grid-cols-3 gap-4 md:gap-6">
           {STEPS.map((s, i) => (
-            <motion.li key={s.title} {...reveal} transition={{ ...reveal.transition, delay: i * 0.08 }} className="relative">
-              <div className="flex items-center gap-4">
-                <span className="font-display text-5xl text-pink-700/90 leading-none">0{i + 1}</span>
-                {i < STEPS.length - 1 && <span className="hidden lg:block flex-1 h-px bg-ink/10" />}
+            <li key={s.title} className="flex md:block gap-4">
+              <span className="font-display text-3xl md:text-5xl text-pink-700/90 leading-none w-10 shrink-0">0{i + 1}</span>
+              <div>
+                <h3 className="font-semibold text-base md:text-lg md:mt-3">{s.title}</h3>
+                <p className="text-sm text-ink/60 mt-1 leading-relaxed">{s.desc}</p>
               </div>
-              <h3 className="font-semibold text-lg mt-4">{s.title}</h3>
-              <p className="text-sm text-ink/60 mt-1.5 leading-relaxed">{s.desc}</p>
-            </motion.li>
+            </li>
           ))}
         </ol>
       </section>
 
       {/* ───────── FAQ ───────── */}
-      <section id="faq" className="px-4 sm:px-6 pb-20 sm:pb-28 max-w-6xl mx-auto scroll-mt-16">
-        <div className="grid lg:grid-cols-[1fr_1.6fr] gap-10 lg:gap-16">
+      <section id="faq" className={`px-4 sm:px-6 pb-12 sm:pb-20 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <div className="grid lg:grid-cols-[1fr_1.6fr] gap-6 lg:gap-16">
           <div>
             <p className="text-xs tracking-[0.2em] uppercase text-brass-dark">FAQ</p>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold mt-3">คำถามที่พบบ่อย</h2>
-            <p className="text-ink/60 mt-4 leading-relaxed">ไม่เจอคำตอบที่หา? ทักแชทมาถามได้เลย ตอบไว</p>
-            <a
-              href={IG_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 mt-6 rounded-full border border-ink/15 px-5 py-3 text-sm hover:border-pink-700 hover:text-pink-700 transition-colors"
-            >
-              <Instagram size={16} /> ทัก @miwvie_shop
-            </a>
+            <h2 className="font-display text-3xl sm:text-4xl font-bold mt-2 sm:mt-3">คำถามที่พบบ่อย</h2>
           </div>
           <div className="divide-y divide-ink/10 border-y border-ink/10">
             {FAQ.map(({ q, a }) => (
-              <details key={q} className="group py-5">
+              <details key={q} className="group py-4 sm:py-5">
                 <summary className="flex items-center justify-between gap-6 cursor-pointer list-none font-medium text-base sm:text-lg [&::-webkit-details-marker]:hidden">
                   {q}
                   <span className="w-8 h-8 rounded-full ring-1 ring-ink/15 flex items-center justify-center shrink-0 group-open:bg-pink-700 group-open:ring-pink-700 group-open:text-cream transition-colors">
@@ -633,48 +533,36 @@ export default function Home() {
             ))}
           </div>
         </div>
-      </section>
 
-      {/* ───────── Closing CTA ───────── */}
-      <section className="px-4 sm:px-6 pb-20 sm:pb-28 max-w-6xl mx-auto">
-        <motion.div {...reveal} className="relative overflow-hidden rounded-[2rem] text-cream px-6 py-14 sm:px-14 sm:py-20" style={{ background: WINE_BG }}>
-          <Image
-            src="/cameras/ixy30s-new.png"
-            alt=""
-            width={522}
-            height={460}
-            className="hidden md:block absolute right-10 bottom-0 translate-y-6 w-72 h-auto opacity-95 drop-shadow-[0_20px_30px_rgba(0,0,0,0.4)]"
-          />
-          <div className="relative max-w-lg">
-            <h2 className="font-display text-4xl sm:text-5xl font-bold leading-tight">
-              ทริปหน้า
-              <br />
-              <span className="italic text-brass-light">พกกล้องไปด้วยกัน</span>
-            </h2>
-            <p className="text-cream/70 mt-5">เช็กคิวว่างได้ทันที จองเสร็จในไม่กี่นาที</p>
-            <div className="flex flex-col sm:flex-row gap-3 mt-8">
-              <Link
-                href={BOOK_HREF}
-                className="group inline-flex items-center justify-center gap-2 bg-cream text-pink-800 font-semibold rounded-full px-7 py-4 hover:bg-white transition-colors"
-              >
-                จองกล้องเลย <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <a
-                href={IG_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-full px-7 py-4 border border-cream/30 hover:bg-white/10 transition-colors"
-              >
-                <Instagram size={18} /> ดูรีวิวลูกค้า
-              </a>
-            </div>
+        {/* Ask first */}
+        <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl bg-white ring-1 ring-pink-900/[0.07] px-5 py-4">
+          <p className="font-medium">
+            ทักถามก่อนก็ได้ <span className="text-ink/50 font-normal text-sm">ตอบไว</span>
+          </p>
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            <a
+              href={LINE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 min-h-11 rounded-full bg-[#06C755] text-white text-sm font-medium px-5"
+            >
+              <MessageCircle size={16} /> LINE
+            </a>
+            <a
+              href={IG_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 min-h-11 rounded-full border border-ink/15 text-sm font-medium px-5 hover:border-pink-700 hover:text-pink-700 transition-colors"
+            >
+              <Instagram size={16} /> Instagram
+            </a>
           </div>
-        </motion.div>
+        </div>
       </section>
 
       {/* ───────── Footer ───────── */}
       <footer className="bg-[#22141A] text-cream/60 pb-24 md:pb-0">
-        <div className="px-4 sm:px-6 py-12 max-w-6xl mx-auto grid sm:grid-cols-[1.5fr_1fr_1fr] gap-8 text-sm">
+        <div className="px-4 sm:px-6 py-10 sm:py-12 max-w-6xl mx-auto grid sm:grid-cols-[1.5fr_1fr_1fr] gap-6 sm:gap-8 text-sm">
           <div>
             <div className="flex items-center gap-2.5">
               <Image src="/logo.png" alt="" width={32} height={32} className="rounded-full" />
@@ -684,9 +572,14 @@ export default function Home() {
           </div>
           <div>
             <p className="text-cream/90 font-medium mb-3">ติดต่อ</p>
-            <a href={IG_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-cream transition-colors">
-              <Instagram size={15} /> @miwvie_shop
-            </a>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              <a href={IG_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-cream transition-colors">
+                <Instagram size={15} /> @miwvie_shop
+              </a>
+              <a href={LINE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-cream transition-colors">
+                <MessageCircle size={15} /> LINE
+              </a>
+            </div>
           </div>
           <div>
             <p className="text-cream/90 font-medium mb-3">จุดรับ-คืน</p>
@@ -702,18 +595,23 @@ export default function Home() {
 
       {/* ───────── Mobile booking bar ───────── */}
       <div
-        className={`md:hidden fixed bottom-0 inset-x-0 z-40 p-3 transition-transform duration-300 ${
+        data-mobile-bar
+        className={`md:hidden fixed bottom-0 inset-x-0 z-40 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-300 ${
           showBar ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
-        <div className="flex items-center justify-between gap-3 bg-ink/95 backdrop-blur rounded-2xl pl-5 pr-2 py-2 shadow-2xl">
-          <p className="text-cream text-sm">
-            เริ่มต้น <b className="text-brass-light">{MIN_PRICE}฿</b>
-            <span className="text-cream/50"> · ไม่มีมัดจำ</span>
+        <div className="flex items-center justify-between gap-3 bg-ink/95 rounded-2xl pl-4 pr-2 py-2 shadow-2xl">
+          <p className="text-cream text-sm whitespace-nowrap">
+            เริ่ม <b className="text-brass-light">{MIN_PRICE}฿</b>
           </p>
-          <Link href={BOOK_HREF} className="bg-cream text-pink-800 font-semibold text-sm rounded-xl px-5 py-3">
-            จองเลย
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            <a href="#availability" className="inline-flex items-center min-h-11 bg-cream text-ink font-medium text-sm rounded-xl px-4">
+              คิวว่าง
+            </a>
+            <Link href={BOOK_HREF} className="inline-flex items-center min-h-11 bg-pink-600 text-cream font-semibold text-sm rounded-xl px-5">
+              จองเลย
+            </Link>
+          </div>
         </div>
       </div>
     </main>
@@ -722,65 +620,12 @@ export default function Home() {
 
 function SectionHead({ eyebrow, title, aside }: { eyebrow: string; title: string; aside?: React.ReactNode }) {
   return (
-    <motion.div {...reveal} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-10">
+    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-1.5 sm:gap-3 mb-5 sm:mb-10">
       <div>
         <p className="text-xs tracking-[0.2em] uppercase text-brass-dark">{eyebrow}</p>
-        <h2 className="font-display text-3xl sm:text-4xl font-bold mt-3">{title}</h2>
+        <h2 className="font-display text-[1.75rem] sm:text-4xl font-bold mt-1.5 sm:mt-3">{title}</h2>
       </div>
       {aside && <div className="text-sm text-ink/55">{aside}</div>}
-    </motion.div>
-  )
-}
-
-function OptionCard({
-  icon: Icon,
-  title,
-  price,
-  unit,
-  lines,
-  link,
-  featured,
-}: {
-  icon: React.ElementType
-  title: string
-  price: string
-  unit?: string
-  lines: string[]
-  link?: { href: string; label: string }
-  featured?: boolean
-}) {
-  return (
-    <motion.div
-      {...reveal}
-      className={`rounded-2xl p-6 sm:p-7 flex flex-col ${
-        featured ? 'bg-pink-700 text-cream' : 'bg-cream'
-      }`}
-    >
-      <div className="flex items-start justify-between">
-        <span className={`w-11 h-11 rounded-xl flex items-center justify-center ${featured ? 'bg-white/15' : 'bg-white'}`}>
-          <Icon size={20} className={featured ? 'text-cream' : 'text-pink-700'} />
-        </span>
-        <p className="text-right">
-          <span className="font-display text-3xl font-bold">{price}</span>
-          {unit && <span className={`text-sm ml-1 ${featured ? 'text-cream/60' : 'text-ink/50'}`}>{unit}</span>}
-        </p>
-      </div>
-      <h3 className="font-semibold text-lg mt-6">{title}</h3>
-      <div className={`text-sm mt-1.5 leading-relaxed ${featured ? 'text-cream/75' : 'text-ink/60'}`}>
-        {lines.map((l) => (
-          <p key={l}>{l}</p>
-        ))}
-      </div>
-      {link && (
-        <a
-          href={link.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-brass-light hover:underline underline-offset-4"
-        >
-          {link.label} <ArrowUpRight size={14} />
-        </a>
-      )}
-    </motion.div>
+    </div>
   )
 }

@@ -17,12 +17,14 @@ import { th } from 'date-fns/locale'
 import { clsx } from 'clsx'
 import { BookedSlot, CameraId } from '@/types'
 import { hasCapacityConflict } from '@/lib/cameras'
+import { Closure, handoverError } from '@/lib/closures'
 import { ChevronLeft, ChevronRight, Check, X as XIcon } from 'lucide-react'
 
 interface Props {
   cameraId: CameraId
   quantity: number
   bookedSlots: BookedSlot[]
+  closures?: Closure[] // shop closures for this model (+ 'ALL'); hold no unit
   onSelectPickup: (dt: Date) => void
   selectedPickup: Date | null
   durationHours: number
@@ -32,12 +34,14 @@ interface Props {
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
-type DayStatus = 'free' | 'partial' | 'full' | 'past'
+type DayStatus = 'free' | 'partial' | 'full' | 'closed' | 'past'
+const NO_CLOSURES: Closure[] = []
 
 export default function HourlyTimeline({
   cameraId,
   quantity,
   bookedSlots,
+  closures = NO_CLOSURES,
   onSelectPickup,
   selectedPickup,
   durationHours,
@@ -65,6 +69,15 @@ export default function HourlyTimeline({
     return hasCapacityConflict(relevantSlots, quantity, slotStart, slotEnd)
   }
 
+  // Shop shut at this pickup hour, or at the return it leads to ('closed' only)
+  function closedReason(day: Date, hour: number): string {
+    if (!closures.length) return ''
+    const slotStart = new Date(day)
+    slotStart.setHours(hour, 0, 0, 0)
+    const t = slotStart.getTime()
+    return handoverError(closures, cameraId, 'local', t, t + durationHours * 3600000)
+  }
+
   function isPast(day: Date, hour: number): boolean {
     const slotStart = new Date(day)
     slotStart.setHours(hour, 0, 0, 0)
@@ -83,20 +96,22 @@ export default function HourlyTimeline({
   function dayStatus(day: Date): DayStatus {
     const hours = HOURS.filter((h) => !isPast(day, h))
     if (hours.length === 0) return 'past'
-    const availableCount = hours.filter((h) => !isBooked(day, h)).length
+    const open = hours.filter((h) => !closedReason(day, h))
+    if (open.length === 0) return 'closed'
+    const availableCount = open.filter((h) => !isBooked(day, h)).length
     if (availableCount === 0) return 'full'
     if (availableCount === hours.length) return 'free'
     return 'partial'
   }
 
   function handleDayClick(day: Date, status: DayStatus) {
-    if (status === 'past' || status === 'full') return
+    if (status === 'past' || status === 'full' || status === 'closed') return
     setSelectedDay(day)
   }
 
   function handleHourClick(hour: number) {
     if (!selectedDay) return
-    if (isPast(selectedDay, hour) || isBooked(selectedDay, hour)) return
+    if (isPast(selectedDay, hour) || isBooked(selectedDay, hour) || closedReason(selectedDay, hour)) return
     const dt = new Date(selectedDay)
     dt.setHours(hour, 0, 0, 0)
     onSelectPickup(dt)
@@ -145,7 +160,7 @@ export default function HourlyTimeline({
             const status = dayStatus(day)
             const inMonth = isSameMonth(day, viewMonth)
             const selected = !!selectedDay && isSameDay(day, selectedDay)
-            const disabled = status === 'past' || status === 'full'
+            const disabled = status === 'past' || status === 'full' || status === 'closed'
             return (
               <button
                 key={day.toISOString()}
@@ -166,6 +181,7 @@ export default function HourlyTimeline({
                 {status === 'free' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                 {status === 'partial' && <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />}
                 {status === 'full' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                {status === 'closed' && <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />}
               </button>
             )
           })}
@@ -184,6 +200,12 @@ export default function HourlyTimeline({
             <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
             เต็ม
           </span>
+          {closures.length > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+              ร้านปิด
+            </span>
+          )}
         </div>
       </div>
 
@@ -197,18 +219,21 @@ export default function HourlyTimeline({
             {HOURS.map((h) => {
               const busy = isBooked(selectedDay, h)
               const past = isPast(selectedDay, h)
+              const shut = !past && !busy ? closedReason(selectedDay, h) : ''
               const selected = isSelected(selectedDay, h)
-              const disabled = busy || past
+              const disabled = busy || past || Boolean(shut)
               return (
                 <button
                   key={h}
                   onClick={() => handleHourClick(h)}
                   disabled={disabled}
-                  title={busy ? 'ถูกจองแล้ว' : past ? 'ผ่านไปแล้ว' : 'ว่าง'}
+                  title={busy ? 'ถูกจองแล้ว' : past ? 'ผ่านไปแล้ว' : shut ? shut : 'ว่าง'}
                   className={clsx(
                     'flex flex-col items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-medium transition-all',
                     selected
                       ? 'bg-pink text-white shadow-pink-glow-sm'
+                      : shut
+                      ? 'bg-gray-100 border border-dashed border-gray-300 text-gray-400 cursor-not-allowed'
                       : disabled
                       ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
                       : 'bg-white border border-emerald-100 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50',
@@ -219,6 +244,8 @@ export default function HourlyTimeline({
                     <Check size={12} />
                   ) : busy ? (
                     <XIcon size={10} className="text-gray-300" />
+                  ) : shut ? (
+                    <span className="text-[9px] leading-none">ร้านปิด</span>
                   ) : !past ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   ) : (

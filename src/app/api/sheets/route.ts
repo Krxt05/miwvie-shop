@@ -12,6 +12,7 @@ const isConfigured = Boolean(SCRIPT_URL && !SCRIPT_URL.includes('PLACEHOLDER'))
 const GET_ACTIONS = new Set([
   'getAvailability',
   'getAllAvailability',
+  'getPublicAvailability',
   'getBooking',
   'validateDiscountCode',
 ])
@@ -106,7 +107,10 @@ export async function GET(request: NextRequest) {
   if (!GET_ACTIONS.has(action)) return fail('ACTION_NOT_ALLOWED', requestId, action)
 
   const url = new URL(SCRIPT_URL)
-  searchParams.forEach((v, k) => url.searchParams.set(k, v))
+  // The homepage summary takes no parameters: forward only the action so extra
+  // query junk can't bust the CDN cache and run Apps Script on every hit.
+  if (action === 'getPublicAvailability') url.searchParams.set('action', action)
+  else searchParams.forEach((v, k) => url.searchParams.set(k, v))
 
   let res: Response
   try {
@@ -130,8 +134,12 @@ export async function GET(request: NextRequest) {
   // 30s and keep serving it (while refreshing in the background) for up to 10
   // min, so customers almost never wait on Apps Script. Safe: createBooking
   // re-checks the live sheet, so a slot taken in the meantime is still refused.
-  const cacheable = QUEUE_ACTIONS.has(action) && !payload?.error
-  return NextResponse.json(payload, cacheable
+  if (payload?.error) return NextResponse.json(payload)
+  if (action === 'getPublicAvailability') {
+    // A summary for browsing; the booking page re-checks the live queue
+    return NextResponse.json(payload, { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=600' } })
+  }
+  return NextResponse.json(payload, QUEUE_ACTIONS.has(action)
     ? { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=600' } }
     : undefined)
 }

@@ -279,6 +279,13 @@ function AdminApp() {
   }), [busyIds, codeLoading, discountCodes, setStatus, cancel, generateCode, saveNotes])
 
   const onToggle = useCallback((id: string) => setExpanded((cur) => (cur === id ? null : id)), [])
+  // From the queue chart: show that one booking, expanded, in the bookings tab
+  const openBooking = useCallback((id: string) => {
+    setFilters({ ...DEFAULT_FILTERS, status: 'all', search: id })
+    setExpanded(id)
+    setTab('bookings')
+    window.scrollTo(0, 0)
+  }, [])
   const jumpTo = useCallback((status: BookingStatus) => { setFilters({ ...DEFAULT_FILTERS, status }); setTab('bookings') }, [])
 
   const todayBadge = useMemo(() => {
@@ -400,7 +407,13 @@ function AdminApp() {
           />
         )}
         {tab === 'queue' && (
-          <QueueTab pin={pin} bookings={bookings} blockedSlots={blockedSlots} setBlockedSlots={setBlockedSlots} />
+          <QueueTab
+            pin={pin}
+            bookings={bookings}
+            blockedSlots={blockedSlots}
+            setBlockedSlots={setBlockedSlots}
+            onOpenBooking={openBooking}
+          />
         )}
         {tab === 'revenue' && (
           <RevenueTab

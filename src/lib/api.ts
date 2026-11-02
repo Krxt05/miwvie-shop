@@ -1,5 +1,6 @@
-import { BookedSlot, BookingFormData, Booking, CameraId, DeliveryType, PaymentStatus, BookingStatus, RentalArea } from '@/types'
+import { BookedSlot, ClosedSlot, BookingFormData, Booking, CameraId, DeliveryType, PaymentStatus, BookingStatus, RentalArea } from '@/types'
 import { calcPrice, calcDeliveryFee, getCameraById, PROVINCIAL_SHIPPING_FEE } from './cameras'
+import { BlockMode, normaliseMode } from './closures'
 
 // Apps Script ส่งมาเป็น snake_case → แปลงเป็น camelCase
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,11 +157,24 @@ export async function getAvailability(
   cameraId: CameraId,
   opts: { year?: number; month?: number; from?: Date } = {},
 ): Promise<BookedSlot[]> {
+  return (await getCameraQueue(cameraId, opts)).slots
+}
+
+// Same read, plus the shop closures (`closed`) that hold no unit but forbid
+// pickups/returns inside them. An older Apps Script sends none: [].
+export async function getCameraQueue(
+  cameraId: CameraId,
+  opts: { year?: number; month?: number; from?: Date } = {},
+): Promise<{ slots: BookedSlot[]; closed: ClosedSlot[] }> {
   const params: Record<string, string> = { action: 'getAvailability', camera: cameraId }
   if (opts.year && opts.month) params.month = `${opts.year}-${String(opts.month).padStart(2, '0')}`
   if (opts.from) params.from = opts.from.toISOString()
   const data = await readWithRetry(params)
-  return data.slots ?? []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const closed: ClosedSlot[] = (Array.isArray(data.closed) ? data.closed : []).filter((c: any) =>
+    c && typeof c === 'object' && (c.mode === 'closed' || c.mode === 'nopickup') &&
+    !isNaN(new Date(c.start).getTime()) && !isNaN(new Date(c.end).getTime()))
+  return { slots: data.slots ?? [], closed }
 }
 
 export async function getAllCamerasAvailability(
@@ -330,7 +344,8 @@ export interface BlockedSlot {
   endDatetime: string
   reason: string
   createdAt: string
-  quantity: number
+  quantity: number  // 0 for closures — they hold no unit
+  mode: BlockMode   // older rows (empty) = 'hold'
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -342,7 +357,9 @@ function mapBlockedSlot(r: Record<string, any>): BlockedSlot {
     endDatetime: String(r.end_datetime ?? ''),
     reason: String(r.reason ?? ''),
     createdAt: String(r.created_at ?? ''),
-    quantity: Number(r.quantity) || 1,
+    // Closures hold no unit: keep 0. Old hold rows with no quantity = 1.
+    quantity: normaliseMode(r.mode) === 'hold' ? Number(r.quantity) || 1 : 0,
+    mode: normaliseMode(r.mode),
   }
 }
 
@@ -354,6 +371,7 @@ export async function blockDates(
   pin: string,
   quantity?: number,
   requestKey?: string,
+  mode: BlockMode = 'hold',
 ): Promise<{ success?: boolean; id?: string; error?: string }> {
   return post({
     action: 'blockDates',
@@ -364,6 +382,7 @@ export async function blockDates(
     pin,
     quantity,
     requestKey,
+    mode,
   })
 }
 

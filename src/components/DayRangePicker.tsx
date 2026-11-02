@@ -18,12 +18,14 @@ import { th } from 'date-fns/locale'
 import { clsx } from 'clsx'
 import { BookedSlot, CameraId } from '@/types'
 import { hasCapacityConflict, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
+import { Closure, handoverError } from '@/lib/closures'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Props {
   cameraId: CameraId
   quantity: number
   bookedSlots: BookedSlot[]
+  closures?: Closure[] // shop closures for this model (+ 'ALL'); hold no unit
   durationHours: number
   onSelectPickup: (dt: Date) => void
   selectedPickup: Date | null
@@ -31,11 +33,13 @@ interface Props {
 }
 
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+const NO_CLOSURES: Closure[] = []
 
 export default function DayRangePicker({
   cameraId,
   quantity,
   bookedSlots,
+  closures = NO_CLOSURES,
   durationHours,
   onSelectPickup,
   selectedPickup,
@@ -66,6 +70,13 @@ export default function DayRangePicker({
     return !hasCapacityConflict(relevantSlots, quantity, paddedStart, paddedEnd)
   }
 
+  // The shop is shut for the whole ship-out window, so the parcel can't go out
+  function isShipClosed(day: Date): boolean {
+    if (!closures.length) return false
+    const start = startOfDay(day).getTime()
+    return Boolean(handoverError(closures, cameraId, 'provincial', start, start + durationHours * 3600000))
+  }
+
   // The shop needs lead time to ship the unit out before this date, so "today"
   // and the next couple of days can never be picked, even with an empty queue.
   function isTooSoon(day: Date): boolean {
@@ -83,7 +94,7 @@ export default function DayRangePicker({
   }
 
   function handleDayClick(day: Date) {
-    if (isTooSoon(day) || !isDayAvailable(day)) return
+    if (isTooSoon(day) || isShipClosed(day) || !isDayAvailable(day)) return
     onSelectPickup(startOfDay(day))
   }
 
@@ -129,7 +140,8 @@ export default function DayRangePicker({
             const inMonth = isSameMonth(day, viewMonth)
             const past = isPast(day)
             const tooSoon = !past && isTooSoon(day)
-            const available = !past && !tooSoon && isDayAvailable(day)
+            const shipClosed = !past && !tooSoon && isShipClosed(day)
+            const available = !past && !tooSoon && !shipClosed && isDayAvailable(day)
             const disabled = past || tooSoon || !available
             const isStart = !!selectedPickup && isSameDay(day, selectedPickup)
             const inRange = !isStart && isInSelectedRange(day)
@@ -141,6 +153,7 @@ export default function DayRangePicker({
                 title={
                   past ? 'ผ่านไปแล้ว'
                     : tooSoon ? `ต้องจองล่วงหน้าอย่างน้อย ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`
+                    : shipClosed ? 'ร้านปิดช่วงส่งพัสดุ'
                     : available ? 'เลือกวันนี้เป็นวันเริ่มเช่าได้'
                     : 'คิวไม่ว่างช่วงนี้'
                 }
@@ -162,7 +175,7 @@ export default function DayRangePicker({
                   <span
                     className={clsx(
                       'w-1.5 h-1.5 rounded-full',
-                      available ? 'bg-emerald-400' : 'bg-red-500',
+                      available ? 'bg-emerald-400' : shipClosed ? 'bg-gray-400' : 'bg-red-500',
                     )}
                   />
                 )}
@@ -180,6 +193,12 @@ export default function DayRangePicker({
             <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
             คิวไม่ว่าง
           </span>
+          {closures.length > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+              ร้านปิดช่วงส่งพัสดุ
+            </span>
+          )}
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
             ต้องจองล่วงหน้า {PROVINCIAL_SHIP_LEAD_DAYS} วัน

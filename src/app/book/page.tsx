@@ -11,13 +11,14 @@ import {
   PROVINCIAL_SHIPPING_FEE, MIN_PROVINCIAL_DURATION_HOURS, PROVINCIAL_SHIP_LEAD_DAYS,
   isDeliveryTime, DELIVERY_HOURS_LABEL, SHOP_MAP_URL, LOCAL_DELIVERY_FEE,
 } from '@/lib/cameras'
-import { getAvailability, createBooking, attachImages, validateDiscountCode, queueFromDate } from '@/lib/api'
+import { getCameraQueue, createBooking, attachImages, validateDiscountCode, queueFromDate } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
 import ReceiptCard from '@/components/ReceiptCard'
 import Button from '@/components/ui/Button'
 import { rememberBooking, bookingPath } from '@/lib/myBookings'
-import { BookedSlot, BookingFormData, CameraId, ContactChannel, DeliveryType, RentalArea } from '@/types'
+import { Closure, handoverError } from '@/lib/closures'
+import { BookedSlot, ClosedSlot, BookingFormData, CameraId, ContactChannel, DeliveryType, RentalArea } from '@/types'
 
 const DURATION_OPTIONS = [
   { hours: 6, label: '6 ชั่วโมง' },
@@ -85,6 +86,9 @@ function BookPage() {
   const [pickupDatetime, setPickupDatetime] = useState<Date | null>(null)
   const [returnDatetime, setReturnDatetime] = useState<Date | null>(null)
   const [bookedSlots, setBookedSlots] = useState<BookedSlot[]>([])
+  // Shop closures: hold no unit, but no pickup (and for 'closed' no return)
+  // may fall inside. Kept apart from bookedSlots, which all count as capacity.
+  const [closedSlots, setClosedSlots] = useState<ClosedSlot[]>([])
   const [pickupType, setPickupType] = useState<DeliveryType>('self')
   const [pickupAddress, setPickupAddress] = useState('')
   const [returnType, setReturnType] = useState<DeliveryType>('self')
@@ -231,13 +235,20 @@ function BookPage() {
     // and thus permanently blank — for the rest of the session.
     inFlightRef.current.add(key)
     setQueueStatus((q) => ({ ...q, [key]: { state: 'loading' } }))
-    getAvailability(key, { from: queueFromDate() })
-      .then((slots) => {
+    getCameraQueue(key, { from: queueFromDate() })
+      .then(({ slots, closed }) => {
         fetchedCamerasRef.current.add(key)
         setBookedSlots((prev) => {
           const ids = new Set(prev.map((s) => s.bookingId))
           return [...prev, ...slots.filter((s) => !ids.has(s.bookingId))]
         })
+        // An 'ALL' closure comes back with every model's read — de-dupe on id
+        if (closed.length) {
+          setClosedSlots((prev) => {
+            const ids = new Set(prev.map((c) => c.id))
+            return [...prev, ...closed.filter((c) => !ids.has(c.id))]
+          })
+        }
         setQueueStatus((q) => ({ ...q, [key]: { state: 'loaded' } }))
       })
       .catch((e) => {
@@ -267,12 +278,42 @@ function BookPage() {
   useEffect(() => {
     // Ignore a stale ?camera= (e.g. an old link to a retired model) so the
     // customer lands on the picker instead of a blank date step.
-    const id = new URLSearchParams(window.location.search).get('camera')
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('camera')
     if (!CAMERAS.some((c) => c.id === id)) return
     setCameraId(id as CameraId)
     if (!PROVINCIAL_ENABLED) setStep(STEP_DATE)
+
+    // From the homepage "เช็กคิวว่าง" the customer already chose the area and
+    // dates themselves, so carry them over and open the date step to confirm.
+    // (The area is only ever set from their own choice there, never assumed.)
+    const area = params.get('area')
+    const hours = Number(params.get('hours'))
+    const startRaw = params.get('start') || ''
+    if (area !== 'local' && area !== 'provincial') return
+    if (!Number.isFinite(hours) || hours < 6 || hours > 24 * 60) return
+    const pickup = area === 'provincial'
+      ? new Date(`${startRaw.slice(0, 10)}T00:00:00+07:00`)
+      : new Date(`${startRaw.slice(0, 16)}:00+07:00`)
+    if (isNaN(pickup.getTime()) || pickup.getTime() < Date.now() - 60 * 60 * 1000) return
+    if (area === 'provincial' && hours < MIN_PROVINCIAL_DURATION_HOURS) return
+    setRentalArea(area)
+    setDurationHours(hours)
+    if (hours > 168) setCustomDays(Math.round(hours / 24))
+    setPickupDatetime(pickup)
+    setReturnDatetime(addHours(pickup, hours))
+    pendingDateJump.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Step numbers depend on the area, so jump once the area above is applied
+  const pendingDateJump = useRef(false)
+  useEffect(() => {
+    if (!pendingDateJump.current || !rentalArea) return
+    pendingDateJump.current = false
+    setStep(STEP_DATE)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rentalArea])
 
   function handleAreaSelect(area: RentalArea) {
     setRentalArea(area)
@@ -361,6 +402,7 @@ function BookPage() {
       else if (slotsLoading > 0) errs.pickup = QUEUE_LOADING_MSG
       else if (!pickupDatetime) errs.pickup = isProvincial ? 'กรุณาเลือกวันเริ่มเช่า' : 'กรุณาเลือกวันและเวลารับ'
       else if (selectionConflict) errs.pickup = 'ช่วงเวลาที่เลือกซ้อนทับกับการจองอื่น กรุณาเลือกเวลาใหม่'
+      else if (selectionClosed) errs.pickup = selectionClosed
     }
     if (step === STEP_ADDRESS && !isProvincial) {
       if (pickupType === 'delivery' && !pickupDeliveryOk) errs.pickupAddr = `Delivery ได้เฉพาะ ${DELIVERY_HOURS_LABEL} น.`
@@ -534,6 +576,16 @@ function BookPage() {
         ? addDays(returnDatetime!, PROVINCIAL_SHIP_LEAD_DAYS)
         : new Date(returnDatetime!.getTime() + BATTERY_CHARGE_BUFFER_MS),
     )
+
+  // Closures for this model (its own + 'ALL'), in the shape closures.ts takes
+  const closures: Closure[] = closedSlots
+    .filter((c) => c.cameraId === 'ALL' || c.cameraId === cameraId)
+    .map((c) => ({ cameraId: c.cameraId, start: new Date(c.start).getTime(), end: new Date(c.end).getTime(), mode: c.mode }))
+  // '' or why the shop can't hand over / take back at the chosen times
+  const selectionClosed = pickupDatetime && returnDatetime && cameraId
+    ? handoverError(closures, cameraId, rentalArea ?? 'local', pickupDatetime.getTime(), returnDatetime.getTime())
+    : ''
+  const selectionBlocked = selectionConflict || Boolean(selectionClosed)
 
   return (
     <main className="min-h-screen bg-gradient-dark">
@@ -838,6 +890,7 @@ function BookPage() {
                       cameraId={cameraId!}
                       quantity={camera.quantity}
                       bookedSlots={bookedSlots}
+                      closures={closures}
                       durationHours={durationHours}
                       onSelectPickup={handlePickupSelect}
                       selectedPickup={pickupDatetime}
@@ -849,6 +902,7 @@ function BookPage() {
                     cameraId={cameraId!}
                     quantity={camera.quantity}
                     bookedSlots={bookedSlots}
+                    closures={closures}
                     onSelectPickup={handlePickupSelect}
                     selectedPickup={pickupDatetime}
                     durationHours={durationHours}
@@ -860,7 +914,7 @@ function BookPage() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="rounded-xl p-4 mt-4 space-y-2 text-sm"
-                    style={selectionConflict
+                    style={selectionBlocked
                       ? { background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }
                       : { background: 'rgba(140,43,63,0.06)', border: '1px solid rgba(140,43,63,0.18)' }
                     }
@@ -868,6 +922,11 @@ function BookPage() {
                     {selectionConflict && (
                       <p className="text-pink font-semibold text-sm flex items-center gap-2">
                         <span>⚠️</span> ช่วงเวลาซ้อนทับกับการจองอื่น กรุณาเลือกใหม่
+                      </p>
+                    )}
+                    {!selectionConflict && selectionClosed && (
+                      <p className="text-pink font-semibold text-sm flex items-center gap-2">
+                        <span>🚪</span> {selectionClosed}
                       </p>
                     )}
                     {isProvincial ? (
@@ -897,7 +956,7 @@ function BookPage() {
                         </div>
                       </>
                     )}
-                    {!selectionConflict && (
+                    {!selectionBlocked && (
                       <div className="flex justify-between font-semibold text-gold border-t border-pink-100 pt-2">
                         <span>ค่าเช่า</span>
                         <span>{calcPrice(camera!.priceGroup, durationHours).toLocaleString()} ฿</span>
@@ -906,7 +965,7 @@ function BookPage() {
                   </motion.div>
                 )}
 
-                {errors.pickup && !selectionConflict && (
+                {errors.pickup && !selectionBlocked && (
                   <p className="text-pink text-sm mt-2 flex items-center gap-1.5">
                     {errors.pickup === QUEUE_LOADING_MSG && <Loader size={14} className="animate-spin" />}
                     {errors.pickup}
@@ -1428,7 +1487,7 @@ function BookPage() {
                 variant="primary"
                 fullWidth={step === 0}
                 className="flex-1"
-                disabled={step === STEP_DATE && selectionConflict}
+                disabled={step === STEP_DATE && selectionBlocked}
               >
                 ถัดไป <ChevronRight size={16} />
               </Button>

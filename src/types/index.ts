@@ -39,6 +39,16 @@ export interface BookedSlot {
   quantity?: number  // units this slot takes up; defaults to 1 (admin blocks can cover more)
 }
 
+// A shop closure as getAvailability sends it (`closed`). Holds no unit; it only
+// forbids handovers — see src/lib/closures.ts. Absent from older servers.
+export interface ClosedSlot {
+  id: string
+  cameraId: CameraId | 'ALL'
+  start: string  // ISO
+  end: string    // ISO, exclusive
+  mode: 'closed' | 'nopickup'
+}
+
 export interface BookingFormData {
   cameraId: CameraId
   rentalArea: RentalArea

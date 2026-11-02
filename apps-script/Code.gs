@@ -29,7 +29,13 @@ const MIN_PROVINCIAL_DURATION_HOURS = 72
 // constant above in case the two ever need to diverge.
 const PROVINCIAL_SHIP_LEAD_DAYS = 3
 
-const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity', 'request_key']
+// `mode` (added Nov 2026; empty on older rows = 'hold'):
+//   hold     — takes `quantity` units for the whole span (walk-in, repair)
+//   closed   — shop shut: takes no units, but no pickup and no return may fall
+//              inside [start, end); a rental may run across it
+//   nopickup — takes no units; pickups inside are refused, returns allowed
+const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity', 'request_key', 'mode']
+const BLOCK_MODES = { hold: 1, closed: 1, nopickup: 1 }
 const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
 
 const CAMERA_NAMES = {
@@ -346,6 +352,7 @@ function handleGet(p) {
     case 'setup':              return setupSheets()
     case 'getAvailability':    return getAvailability(p.camera, p.month, p.from)
     case 'getAllAvailability':  return getAllAvailability(p.month)
+    case 'getPublicAvailability': return getPublicAvailability()
     case 'getBooking':         return getBookingById(p.id, p.token)
     case 'validateDiscountCode': return validateDiscountCode(p.code)
     case 'getUpcomingQueue':    return getUpcomingQueue(p.pin)
@@ -405,7 +412,7 @@ function handlePostAction(body) {
     case 'getAdminVersion':      return getAdminVersion(body.pin)
     case 'updateAdminNotes':     return updateAdminNotes(body.bookingId, body.notes, body.pin)
     case 'deleteBooking':        return deleteBooking(body.bookingId, body.pin)
-    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity, body.requestKey)
+    case 'blockDates':           return blockDates(body.cameraId, body.start, body.end, body.reason, body.pin, body.quantity, body.requestKey, body.mode)
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
@@ -568,23 +575,84 @@ function readBlockedSlotsAll() {
   const biStart = bh.indexOf('start_datetime')
   const biEnd = bh.indexOf('end_datetime')
   const biQuantity = bh.indexOf('quantity')
+  const biMode = bh.indexOf('mode')
 
   for (let i = 1; i < bData.length; i++) {
     const row = bData[i]
     if (!row[0]) continue
+    // A block whose dates don't parse would throw on toISOString() and take
+    // down every customer's calendar and booking. Skip it instead.
+    const bStart = new Date(row[biStart])
+    const bEnd = new Date(row[biEnd])
+    if (isNaN(bStart.getTime()) || isNaN(bEnd.getTime())) continue
+    const rawMode = biMode >= 0 ? String(row[biMode] || '').trim() : ''
+    const mode = BLOCK_MODES[rawMode] ? rawMode : 'hold'
     result.push({
       cameraId: row[biCamera], // a specific model id, or 'ALL'
-      pickupDatetime: new Date(row[biStart]).toISOString(),
-      returnDatetime: new Date(row[biEnd]).toISOString(),
+      pickupDatetime: bStart.toISOString(),
+      returnDatetime: bEnd.toISOString(),
       // Must be UNIQUE: the booking page merges slots from every fetch and
       // de-dupes on this id, so a shared literal like 'blocked' made every block
       // after the first one silently vanish from the customer's calendar.
       bookingId: String(row[0]),
-      // Older rows predate this column and default to 1 unit blocked
-      quantity: biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
+      // Closures hold no unit: keep their 0. Older hold rows predate the
+      // quantity column and default to 1 unit blocked.
+      quantity: mode !== 'hold' ? 0 : biQuantity >= 0 ? (Number(row[biQuantity]) || 1) : 1,
+      mode: mode,
     })
   }
   return result
+}
+
+// Blocks that take units off the market — the only ones capacity counts.
+function holdBlocks(blocks) {
+  return blocks.filter(function (b) { return b.mode === 'hold' })
+}
+
+// Closures ('closed' / 'nopickup') as plain {cameraId, start, end, mode} in ms,
+// the shape handoverError() takes.
+function closureBlocks(blocks) {
+  return blocks.filter(function (b) { return b.mode !== 'hold' }).map(function (b) {
+    return {
+      cameraId: b.cameraId, start: new Date(b.pickupDatetime).getTime(),
+      end: new Date(b.returnDatetime).getTime(), mode: b.mode, id: b.bookingId,
+    }
+  })
+}
+
+// ── Closure rules (pure; mirrored exactly in src/lib/closures.ts) ──
+// Half-open: reopening exactly at `end` is allowed.
+function closureInside_(t, c) {
+  return t >= c.start && t < c.end
+}
+
+// '' when the handover times are fine, else a Thai reason. Local: no pickup
+// inside any closure, no return inside a 'closed' one. Provincial: the shop
+// must be able to post the parcel on some day of [pickup − 3d, pickup − 1d);
+// returns come back by parcel, so they aren't checked.
+function handoverError(closures, cameraId, area, pickupMs, returnMs) {
+  const DAY = 24 * 60 * 60 * 1000
+  const mine = closures.filter(function (c) { return c.cameraId === 'ALL' || c.cameraId === cameraId })
+  if (!mine.length) return ''
+  if (area === 'provincial') {
+    const ws = pickupMs - PROVINCIAL_SHIP_LEAD_DAYS * DAY
+    const we = pickupMs - DAY
+    const list = mine.filter(function (c) { return c.end > ws && c.start < we })
+      .sort(function (a, b) { return a.start - b.start })
+    let cur = ws
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].start > cur) break
+      if (list[i].end > cur) cur = list[i].end
+    }
+    return cur >= we ? 'ร้านปิดช่วงส่งพัสดุ กรุณาเลือกวันอื่น' : ''
+  }
+  for (let i = 0; i < mine.length; i++) {
+    if (closureInside_(pickupMs, mine[i])) return 'ร้านปิดช่วงเวลารับ กรุณาเลือกเวลาอื่น'
+  }
+  for (let i = 0; i < mine.length; i++) {
+    if (mine[i].mode === 'closed' && closureInside_(returnMs, mine[i])) return 'ร้านปิดช่วงเวลาคืน กรุณาเลือกเวลาอื่น'
+  }
+  return ''
 }
 
 function slotsForCamera(cameraId, bookingSlots, blockedSlots) {
@@ -601,23 +669,105 @@ function slotsForCamera(cameraId, bookingSlots, blockedSlots) {
 
 // `from` (ISO) drops slots that ended before it — the booking page only needs
 // what can still clash with a new booking, not the shop's whole history.
+// Public queue reads must not reveal booking numbers (MIW-yyyyMMdd-NNN gives
+// away how many bookings a day gets). The client only uses the id to de-dupe
+// slots between fetches, so a stable opaque token works the same.
+function publicSlotId_(id) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, 'miwvie-slot:' + String(id))
+  return Utilities.base64EncodeWebSafe(bytes).slice(0, 12)
+}
+function anonymiseSlots_(slots) {
+  return slots.map(function (s) {
+    return { cameraId: s.cameraId, pickupDatetime: s.pickupDatetime, returnDatetime: s.returnDatetime,
+      bookingId: publicSlotId_(s.bookingId), quantity: s.quantity }
+  })
+}
+
+// Closures go in `closed`, NEVER in `slots`: older booking pages count every
+// slot as a held unit and would show the shop's day off as fully booked.
 function getAvailability(cameraId, month, from) {
-  let slots = slotsForCamera(cameraId, readBookingSlotsAll(month), readBlockedSlotsAll())
+  const blocks = readBlockedSlotsAll()
+  let slots = slotsForCamera(cameraId, readBookingSlotsAll(month), holdBlocks(blocks))
+  let closures = closureBlocks(blocks).filter(function (c) { return c.cameraId === 'ALL' || c.cameraId === cameraId })
   const fromDate = from ? new Date(from) : null
   if (fromDate && !isNaN(fromDate.getTime())) {
     slots = slots.filter((s) => new Date(s.returnDatetime) > fromDate)
+    closures = closures.filter(function (c) { return c.end > fromDate.getTime() })
   }
-  return { slots }
+  return {
+    slots: anonymiseSlots_(slots),
+    closed: closures.map(function (c) {
+      return { id: publicSlotId_(c.id), cameraId: c.cameraId, start: new Date(c.start).toISOString(),
+        end: new Date(c.end).toISOString(), mode: c.mode }
+    }),
+  }
 }
 
 function getAllAvailability(month) {
   const bookingSlots = readBookingSlotsAll(month)
-  const blockedSlots = readBlockedSlotsAll()
+  const blockedSlots = holdBlocks(readBlockedSlotsAll())
   const cameras = {}
   Object.keys(CAMERA_NAMES).forEach((id) => {
-    cameras[id] = slotsForCamera(id, bookingSlots, blockedSlots)
+    cameras[id] = anonymiseSlots_(slotsForCamera(id, bookingSlots, blockedSlots))
   })
   return { cameras }
+}
+
+// Homepage "เช็กคิวว่าง": only how many units of each model are in use over the
+// next PUBLIC_DAYS, as a step function — no booking ids, no customer data, no
+// local/provincial split. Times are rounded outward to 30 min so the homepage
+// can never call a slot free that the booking check would refuse.
+const PUBLIC_DAYS = 30
+function getPublicAvailability() {
+  const HALF_HOUR = 30 * 60 * 1000
+  const from = startOfTodayBangkok().getTime()
+  const to = from + PUBLIC_DAYS * 24 * 60 * 60 * 1000
+  const down = function (t) { return Math.floor(t / HALF_HOUR) * HALF_HOUR }
+  const up = function (t) { return Math.ceil(t / HALF_HOUR) * HALF_HOUR }
+  const bookingSlots = readBookingSlotsAll(null)
+  const allBlocks = readBlockedSlotsAll()
+  const blocks = holdBlocks(allBlocks)
+
+  // Whole-shop 'closed' closures, so the page can say "ร้านหยุด"; `closures`
+  // carries every closure (any model, both modes) for the handover rules.
+  const closed = []
+  const closures = []
+  closureBlocks(allBlocks).forEach(function (c) {
+    const s = down(c.start)
+    const e = up(c.end)
+    if (!(e > from && s < to)) return
+    closures.push({ cam: c.cameraId, s: s, e: e, mode: c.mode })
+    if (c.cameraId === 'ALL' && c.mode === 'closed') closed.push([Math.max(s, from), Math.min(e, to)])
+  })
+
+  const cameras = {}
+  Object.keys(CAMERA_QUANTITY).forEach(function (id) {
+    const units = CAMERA_QUANTITY[id]
+    const events = []
+    const add = function (startIso, endIso, weight) {
+      const s = Math.max(down(new Date(startIso).getTime()), from)
+      const e = Math.min(up(new Date(endIso).getTime()), to)
+      if (!(e > s)) return
+      events.push([s, weight], [e, -weight])
+    }
+    bookingSlots.forEach(function (b) { if (b.cameraId === id) add(b.pickupDatetime, b.returnDatetime, 1) })
+    blocks.forEach(function (b) {
+      if (b.cameraId !== id && b.cameraId !== 'ALL') return
+      add(b.pickupDatetime, b.returnDatetime, b.cameraId === 'ALL' ? units : Math.min(b.quantity || 1, units))
+    })
+    events.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1] })
+    // [[time, units in use from this time on], ...] starting at `from`
+    const steps = [[from, 0]]
+    let level = 0
+    events.forEach(function (ev) {
+      level += ev[1]
+      const last = steps[steps.length - 1]
+      if (last[0] === ev[0]) last[1] = level
+      else if (last[1] !== level) steps.push([ev[0], level])
+    })
+    cameras[id] = { units: units, steps: steps }
+  })
+  return { from: from, to: to, generatedAt: Date.now(), cameras: cameras, closed: closed, closures: closures }
 }
 
 // ── Create booking ───────────────────────────────────────────
@@ -728,7 +878,15 @@ function createBooking(data) {
     // on top of whatever buffer the neighboring booking already carries.
     // Always reads the live sheet (no cache) so the check can't miss a booking
     // that landed a moment earlier.
-    const existingSlots = slotsForCamera(data.cameraId, readBookingSlotsAll(null), readBlockedSlotsAll())
+    const allBlocks = readBlockedSlotsAll()
+
+    // Shop closures first: they hold no unit but forbid handing a camera over
+    // (or taking one back) while the shop is shut.
+    const closedErr = handoverError(closureBlocks(allBlocks), data.cameraId,
+      isProvincial ? 'provincial' : 'local', pickupDate.getTime(), returnDate.getTime())
+    if (closedErr) return { error: closedErr }
+
+    const existingSlots = slotsForCamera(data.cameraId, readBookingSlotsAll(null), holdBlocks(allBlocks))
     // Local candidates carry the 1hr battery-charge tail, same as stored rows.
     const newPickup = new Date(pickupDate.getTime() - (isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : 0))
     const newReturn = new Date(returnDate.getTime() + (isProvincial ? PROVINCIAL_SHIP_BUFFER_MS : BATTERY_CHARGE_BUFFER_MS))
@@ -1428,9 +1586,22 @@ function deleteBooking(bookingId, pin) {
   })
 }
 
-function blockDates(cameraId, start, end, reason, pin, requestedQuantity, requestKey) {
+function blockDates(cameraId, start, end, reason, pin, requestedQuantity, requestKey, requestedMode) {
   const authErr = checkPin(pin)
   if (authErr) return authErr
+
+  // Validate before anything is written: a bad row here would break the
+  // capacity check for every customer (see readBlockedSlotsAll).
+  const startMs = new Date(start).getTime()
+  const endMs = new Date(end).getTime()
+  if (isNaN(startMs) || isNaN(endMs)) return { error: 'วันที่ไม่ถูกต้อง' }
+  if (endMs <= startMs) return { error: 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม' }
+  if (endMs - startMs > 180 * 24 * 60 * 60 * 1000) return { error: 'บล็อกได้ไม่เกิน 180 วันต่อครั้ง' }
+  if (cameraId !== 'ALL' && !CAMERA_QUANTITY.hasOwnProperty(cameraId)) return { error: 'ไม่รู้จักรุ่นกล้องนี้' }
+  const mode = requestedMode ? String(requestedMode) : 'hold'
+  if (!BLOCK_MODES[mode]) return { error: 'ประเภทบล็อกไม่ถูกต้อง' }
+  start = new Date(startMs).toISOString()
+  end = new Date(endMs).toISOString()
 
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
@@ -1441,7 +1612,8 @@ function blockDates(cameraId, start, end, reason, pin, requestedQuantity, reques
   // must cover the model with the most units (930 IS has 2) or that model's
   // second unit stays bookable. For a specific model, the admin picks how
   // many of that model's own units this block covers (1..its stock count).
-  const quantity = cameraId === 'ALL'
+  // Closures ('closed' / 'nopickup') hold no unit at all.
+  const quantity = mode !== 'hold' ? 0 : cameraId === 'ALL'
     ? Math.max.apply(null, Object.keys(CAMERA_QUANTITY).map(function (k) { return CAMERA_QUANTITY[k] }))
     : Math.max(1, Math.min(Number(requestedQuantity) || 1, CAMERA_QUANTITY[cameraId] || 1))
 
@@ -1468,7 +1640,7 @@ function blockDates(cameraId, start, end, reason, pin, requestedQuantity, reques
     const id = 'BLK-' + Date.now()
     const values = {
       id: id, camera_id: cameraId, start_datetime: start, end_datetime: end, reason: reason || '',
-      created_at: new Date().toISOString(), quantity: quantity, request_key: key,
+      created_at: new Date().toISOString(), quantity: quantity, request_key: key, mode: mode,
     }
     sheet.appendRow(header.map(function (name) { return values.hasOwnProperty(name) ? values[name] : '' }))
     SpreadsheetApp.flush()

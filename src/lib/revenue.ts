@@ -228,6 +228,8 @@ export function cameraRows(
       })
     for (const bl of blocks) {
       if (bl.cameraId !== c.id && bl.cameraId !== 'ALL') continue
+      // Shop-closed blocks don't take units (rentals may span them)
+      if (bl.mode && bl.mode !== 'hold') continue
       // 'ALL' takes every unit of every model off the market (blockDates in Code.gs)
       const weight = bl.cameraId === 'ALL' ? c.quantity : Math.min(bl.quantity || 1, c.quantity)
       busy.push({ start: ms(bl.startDatetime), end: ms(bl.endDatetime), weight })
