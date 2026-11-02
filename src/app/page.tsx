@@ -77,8 +77,8 @@ const PRICE_SUMMARY = (['A', 'B'] as const).map((g) => {
 
 // Sticky chip nav on phones (anchor links only)
 const SECTION_LINKS = [
-  { href: '#availability', label: 'คิวว่าง' },
   { href: '#cameras', label: 'กล้อง' },
+  { href: '#availability', label: 'คิวว่าง' },
   { href: '#pricing', label: 'ราคา' },
   { href: '#pickup', label: 'รับกล้อง' },
   { href: '#faq', label: 'FAQ' },
@@ -229,27 +229,30 @@ export default function Home() {
             </Link>
           </div>
         </nav>
-        <div className={`md:hidden flex gap-2 overflow-x-auto px-4 pb-2 pt-0.5 ${HIDE_SCROLLBAR}`} aria-label="ไปที่หัวข้อ">
-          {SECTION_LINKS.map((l) => (
-            <a
-              key={l.href}
-              href={l.href}
-              className="shrink-0 inline-flex items-center h-10 px-4 rounded-full bg-white text-sm text-ink/80 ring-1 ring-pink-900/10 active:bg-pink-50"
-            >
-              {l.label}
-            </a>
-          ))}
+        {/* Phones: one evenly split row, every link the same width */}
+        <div className="md:hidden px-4 pb-2.5 pt-0.5" aria-label="ไปที่หัวข้อ">
+          <div className="grid grid-cols-5 rounded-full bg-white ring-1 ring-pink-900/10 p-1">
+            {SECTION_LINKS.map((l, i) => (
+              <a
+                key={l.href}
+                href={l.href}
+                className={`relative h-9 flex items-center justify-center rounded-full text-[13px] text-ink/75 whitespace-nowrap active:bg-pink-50 ${
+                  i > 0 ? "before:content-[''] before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-px before:bg-pink-900/10" : ''
+                }`}
+              >
+                {l.label}
+              </a>
+            ))}
+          </div>
         </div>
       </header>
 
-      {/* ───────── Top: queue checker first, key facts beside/below it ─────────
-          The old headline/CTA block is gone: customers come to check dates,
-          so the checker is the first thing on the page. */}
-      <section className="px-4 sm:px-6 pt-4 sm:pt-10 pb-12 sm:pb-24 max-w-6xl mx-auto">
-        <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 lg:gap-y-6 items-start">
+      {/* ───────── Top: photo + headline ───────── */}
+      <section className="px-4 sm:px-6 pt-4 sm:pt-10 pb-10 sm:pb-20 max-w-6xl mx-auto">
+        <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 items-center">
           {/* Visual: photo + a second print + the camera that took it (the owner's
               favourite part of the old hero — kept exactly as it was, on every screen size) */}
-          <div className="min-w-0 lg:col-start-2 lg:row-start-1 pb-4 md:pb-6">
+          <div className="min-w-0 lg:col-start-2 pb-4 md:pb-6">
             <div className="relative mx-auto w-full max-w-[400px] lg:max-w-[440px] aspect-[4/5]">
               <div className="absolute inset-y-0 right-0 w-[78%] rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
                 <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, 80vw" className="object-cover" />
@@ -278,15 +281,88 @@ export default function Home() {
             </div>
           </div>
 
-          <div id="availability" className={`min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 ${SCROLL_MT}`}>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">เช่ากล้องดิจิตอล Canon IXY ใกล้ มมส.</h1>
-            <p className="text-sm text-ink/60 mt-1 mb-4">เลือกวันรับกล้อง เพื่อดูรุ่นที่ว่างและราคา</p>
-            <div ref={checkerRef} className="min-h-[640px]">
-              <AvailabilitySection />
+          {/* Shop wordmark */}
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1 text-center lg:text-left">
+            <p className="text-[11px] sm:text-xs tracking-[0.35em] uppercase text-brass-dark">Mahasarakham · Thailand</p>
+            <h1 className="mt-2 sm:mt-3 leading-none">
+              <span className="block font-display font-bold text-pink-700 text-[3.5rem] sm:text-7xl lg:text-8xl tracking-[0.04em]">MIWVIE</span>
+              <span className="block font-display italic text-ink/80 text-2xl sm:text-4xl lg:text-[2.75rem] mt-1 sm:mt-2">camera rental</span>
+              <span className="sr-only"> — เช่ากล้องดิจิตอล Canon IXY ใกล้ มมส.</span>
+            </h1>
+            <div className="flex items-center justify-center lg:justify-start gap-3 mt-4 sm:mt-6" aria-hidden>
+              <span className="h-px w-10 bg-brass/60" />
+              <span className="w-1.5 h-1.5 rotate-45 bg-brass" />
+              <span className="h-px w-10 bg-brass/60" />
             </div>
+            <p className="text-sm sm:text-base text-ink/65 mt-4 sm:mt-6">เช่ากล้องดิจิตอล Canon IXY ใกล้ มมส.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Cameras ───────── */}
+      <section id="cameras" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="The Collection" title="เลือกรุ่นที่ใช่" aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว`} />
+        {/* Phones: 2 columns, an odd last card spans the row (photo beside
+            text). Tablets: 3 + 2. Desktop: all 5 in one row. No gaps. */}
+        <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-5 gap-3 md:gap-4">
+          {CAMERAS.map((c, i) => {
+            const wide = i === CAMERAS.length - 1 && CAMERAS.length % 2 === 1
+            return (
+            <Link
+              key={c.id}
+              href={`/book?camera=${c.id}`}
+              className={`group min-w-0 flex ${wide ? 'col-span-2 flex-row md:flex-col' : 'flex-col'} ${i < 3 ? 'md:col-span-2' : 'md:col-span-3'} lg:col-span-1 bg-white rounded-2xl overflow-hidden ring-1 ring-pink-900/[0.07] hover:ring-pink-700/30 hover:shadow-[0_20px_40px_-20px_rgba(69,18,31,0.35)] transition-all duration-300`}
+            >
+              <div
+                className={`relative ${wide ? 'w-1/2 shrink-0 md:w-auto' : ''} aspect-square md:aspect-auto md:h-56 lg:h-auto lg:aspect-[4/5] flex items-center justify-center`}
+                style={{ background: `radial-gradient(70% 60% at 50% 55%, ${c.color}26, transparent 75%), #FBF7F4` }}
+              >
+                <Image
+                  src={c.image}
+                  alt={c.name}
+                  fill
+                  sizes="(min-width:1024px) 220px, (min-width:768px) 50vw, 48vw"
+                  className="object-contain p-4 sm:p-6 drop-shadow-[0_14px_16px_rgba(46,12,21,0.3)] group-hover:scale-[1.06] group-hover:-rotate-2 transition-transform duration-500"
+                />
+                {c.quantity > 1 && (
+                  <span className="absolute top-2.5 right-2.5 bg-pink-700 text-cream rounded-full px-2 py-0.5 text-[11px] font-medium">
+                    {c.quantity} ตัว
+                  </span>
+                )}
+              </div>
+              <div className="p-3 sm:p-4 flex flex-col flex-1 min-w-0">
+                <p className="font-display text-lg sm:text-xl leading-tight">{c.shortName}</p>
+                <div className="flex items-center gap-1.5 mt-1.5" aria-label={`สี ${c.colorways.map((x) => x.name).join(' ')}`}>
+                  {c.colorways.map((x) => (
+                    <span key={x.name} title={x.name} className="w-3 h-3 rounded-full ring-1 ring-black/10" style={{ background: x.hex }} />
+                  ))}
+                  <span className="text-xs text-ink/50 ml-1 truncate">{c.colorways.map((x) => x.name).join(' · ')}</span>
+                </div>
+                <div className="mt-auto pt-3 flex items-end justify-between">
+                  <p>
+                    <span className="text-base sm:text-lg font-semibold">{PRICE_TABLES[c.priceGroup].day1}฿</span>
+                    <span className="text-xs text-ink/50"> /วัน</span>
+                  </p>
+                  <span className="w-8 h-8 rounded-full bg-pink-50 text-pink-700 flex items-center justify-center group-hover:bg-pink-700 group-hover:text-cream transition-colors">
+                    <ArrowUpRight size={16} />
+                  </span>
+                </div>
+              </div>
+            </Link>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* ───────── Queue checker + key facts ───────── */}
+      <section id="availability" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
+        <SectionHead eyebrow="Availability" title="ตรวจสอบคิว" aside="เลือกวันรับกล้อง เพื่อดูรุ่นที่ว่างและราคา" />
+        <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 items-start">
+          <div ref={checkerRef} className="min-w-0 min-h-[640px]">
+            <AvailabilitySection />
           </div>
 
-          <aside className="min-w-0 lg:col-start-2 lg:row-start-2">
+          <aside className="min-w-0 lg:sticky lg:top-24">
             <div className="bg-white rounded-2xl ring-1 ring-pink-900/[0.07] p-4 sm:p-5">
               <h2 className="font-semibold text-ink">ข้อมูลสำคัญก่อนเช่า</h2>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-4 mt-4 text-sm">
@@ -316,58 +392,6 @@ export default function Home() {
               </div>
             </div>
           </aside>
-        </div>
-      </section>
-
-      {/* ───────── Cameras ───────── */}
-      <section id="cameras" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
-        <SectionHead eyebrow="The Collection" title="เลือกรุ่นที่ใช่" aside={`${CAMERAS.length} รุ่น · ${TOTAL_UNITS} ตัว · ปัดดูได้`} />
-        <div
-          className={`-mx-4 px-4 flex gap-3 overflow-x-auto snap-x snap-mandatory md:mx-0 md:px-0 md:grid md:grid-cols-3 lg:grid-cols-5 md:gap-4 md:overflow-visible ${HIDE_SCROLLBAR}`}
-        >
-          {CAMERAS.map((c) => (
-            <Link
-              key={c.id}
-              href={`/book?camera=${c.id}`}
-              className="group snap-start shrink-0 w-[44%] md:w-auto flex flex-col bg-white rounded-2xl overflow-hidden ring-1 ring-pink-900/[0.07] hover:ring-pink-700/30 hover:shadow-[0_20px_40px_-20px_rgba(69,18,31,0.35)] transition-all duration-300"
-            >
-              <div
-                className="relative aspect-square md:aspect-[4/5] flex items-center justify-center"
-                style={{ background: `radial-gradient(70% 60% at 50% 55%, ${c.color}26, transparent 75%), #FBF7F4` }}
-              >
-                <Image
-                  src={c.image}
-                  alt={c.name}
-                  fill
-                  sizes="(min-width:1024px) 220px, (min-width:768px) 30vw, 45vw"
-                  className="object-contain p-4 sm:p-6 drop-shadow-[0_14px_16px_rgba(46,12,21,0.3)] group-hover:scale-[1.06] group-hover:-rotate-2 transition-transform duration-500"
-                />
-                {c.quantity > 1 && (
-                  <span className="absolute top-2.5 right-2.5 bg-pink-700 text-cream rounded-full px-2 py-0.5 text-[11px] font-medium">
-                    {c.quantity} ตัว
-                  </span>
-                )}
-              </div>
-              <div className="p-3 sm:p-4 flex flex-col flex-1">
-                <p className="font-display text-lg sm:text-xl leading-tight">{c.shortName}</p>
-                <div className="flex items-center gap-1.5 mt-1.5" aria-label={`สี ${c.colorways.map((x) => x.name).join(' ')}`}>
-                  {c.colorways.map((x) => (
-                    <span key={x.name} title={x.name} className="w-3 h-3 rounded-full ring-1 ring-black/10" style={{ background: x.hex }} />
-                  ))}
-                  <span className="text-xs text-ink/50 ml-1 truncate">{c.colorways.map((x) => x.name).join(' · ')}</span>
-                </div>
-                <div className="mt-auto pt-3 flex items-end justify-between">
-                  <p>
-                    <span className="text-base sm:text-lg font-semibold">{PRICE_TABLES[c.priceGroup].day1}฿</span>
-                    <span className="text-xs text-ink/50"> /วัน</span>
-                  </p>
-                  <span className="w-8 h-8 rounded-full bg-pink-50 text-pink-700 flex items-center justify-center group-hover:bg-pink-700 group-hover:text-cream transition-colors">
-                    <ArrowUpRight size={16} />
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ))}
         </div>
       </section>
 

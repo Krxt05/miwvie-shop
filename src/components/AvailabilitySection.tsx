@@ -463,7 +463,7 @@ export default function AvailabilitySection() {
               </button>
             )}
             {okList.length === 0 && fullList.length > 0 && (
-              <p className="text-sm text-ink/70 mb-2">ช่วงเวลานี้กล้องไม่ว่างทุกรุ่น กรุณาเลือกวันอื่น หรือใช้ปุ่มค้นหาวันว่าง</p>
+              <p className="text-sm text-ink/70 mb-2">{model === 'all' ? 'ช่วงเวลานี้กล้องไม่ว่างทุกรุ่น กรุณาเลือกวันอื่น หรือใช้ปุ่มค้นหาวันว่าง' : `ช่วงเวลานี้ ${shortName(model)} ไม่ว่าง กรุณาเลือกวันอื่น หรือเลือกรุ่นอื่น`}</p>
             )}
             <ul className="space-y-2">
               {okList.map(({ c, price }) => (
