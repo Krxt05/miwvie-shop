@@ -37,9 +37,9 @@ import { PriceTable } from '@/types'
 
 // Loaded after the page is up (and only fetches once scrolled near), so the
 // hero and first paint don't wait on it — the homepage had iPhone jank before.
-const AvailabilitySection = dynamic(() => import('@/components/AvailabilitySection'), {
+const QueueHeatmap = dynamic(() => import('@/components/QueueHeatmap'), {
   ssr: false,
-  loading: () => <div className="bg-white rounded-[2rem] ring-1 ring-pink-900/[0.07] min-h-[640px]" />,
+  loading: () => <div className="bg-white rounded-[2rem] ring-1 ring-pink-900/[0.07] min-h-[360px]" />,
 })
 
 const IG_URL = 'https://www.instagram.com/miwvie_shop/'
@@ -356,10 +356,10 @@ export default function Home() {
 
       {/* ───────── Queue checker + key facts ───────── */}
       <section id="availability" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
-        <SectionHead eyebrow="Availability" title="ตรวจสอบคิว" aside="เลือกวันรับกล้อง เพื่อดูรุ่นที่ว่างและราคา" />
+        <SectionHead eyebrow="Availability" title="ตรวจสอบคิว" aside="แตะช่องที่ว่างเพื่อจองรุ่นและวันนั้น" />
         <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 items-start">
-          <div ref={checkerRef} className="min-w-0 min-h-[640px]">
-            <AvailabilitySection />
+          <div ref={checkerRef} className="min-w-0 min-h-[360px]">
+            <QueueHeatmap />
           </div>
 
           <aside className="min-w-0 lg:sticky lg:top-24">

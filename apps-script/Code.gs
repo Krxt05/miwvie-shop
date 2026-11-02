@@ -717,7 +717,7 @@ function getAllAvailability(month) {
 // next PUBLIC_DAYS, as a step function — no booking ids, no customer data, no
 // local/provincial split. Times are rounded outward to 30 min so the homepage
 // can never call a slot free that the booking check would refuse.
-const PUBLIC_DAYS = 30
+const PUBLIC_DAYS = 90
 function getPublicAvailability() {
   const HALF_HOUR = 30 * 60 * 1000
   const from = startOfTodayBangkok().getTime()

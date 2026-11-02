@@ -14,7 +14,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, ChevronDown, Instagram, MessageCircle, Minus, Plus, Search, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Instagram, MessageCircle, Minus, Plus, Search, X } from 'lucide-react'
 import { CameraId, PriceGroup, RentalArea } from '@/types'
 import {
   CAMERAS, DELIVERY_HOURS_LABEL, LINE_URL, LOCAL_DELIVERY_FEE, MIN_PROVINCIAL_DURATION_HOURS,
@@ -24,7 +24,7 @@ import { FreeMap, PublicQueue, bkkHour, buildFree, fetchPublicQueue, fitsFast, s
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
-const DAYS_SHOWN = 30
+const DAYS_SHOWN = 90 // matches PUBLIC_DAYS in Code.gs
 const STRIP_DAYS = 7
 // IG can't prefill a message, so the button copies it first, then opens the chat
 const IG_DM = 'https://ig.me/m/miwvie_shop'
@@ -47,6 +47,12 @@ const CHEAP_GROUP: PriceGroup | null = GROUPS.length > 1
 const F_DAY = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' })
 const F_WD = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short' })
 const F_DM = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })
+const F_MONTH = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' })
+// Bangkok midnight of the 1st of the month `offset` months after the month of t
+function monthStart(t: number, offset = 0): number {
+  const d = new Date(t + 7 * HOUR)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1) - 7 * HOUR
+}
 const pad = (n: number) => String(n).padStart(2, '0')
 const bkkDate = (t: number) => new Date(t + 7 * HOUR).toISOString().slice(0, 10)
 const dayLabel = (t: number) => F_DAY.format(new Date(t))
@@ -73,6 +79,7 @@ export default function AvailabilitySection() {
   const [advOpen, setAdvOpen] = useState(false)
   const [moreDur, setMoreDur] = useState(false)
   const [calOpen, setCalOpen] = useState(false)
+  const [calMonth, setCalMonth] = useState(0) // months after this month
   const [fullOpen, setFullOpen] = useState(false)
   const [showStarts, setShowStarts] = useState(false)
   const [restored, setRestored] = useState<string | null>(null)
@@ -281,7 +288,22 @@ export default function AvailabilitySection() {
   const inMore = !basic.includes(hours)
   const bookHref = (id: string) =>
     `/book?camera=${id}&area=${area}&start=${encodeURIComponent(isProv ? bkkDate(start) : `${bkkDate(start)}T${pad(safeHour)}:00`)}&hours=${hours}&from=home`
-  const firstWeekday = new Date(today + 12 * HOUR).getUTCDay()
+  // Month calendar: this month up to the month the queue data runs out in
+  const lastDay = today + (DAYS_SHOWN - 1) * DAY
+  const maxMonth = (() => {
+    const a = new Date(today + 7 * HOUR), b = new Date(lastDay + 7 * HOUR)
+    return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth()
+  })()
+  const shownMonth = Math.min(calMonth, maxMonth)
+  const mStart = monthStart(today, shownMonth)
+  const mDays = Math.round((monthStart(today, shownMonth + 1) - mStart) / DAY)
+  const monthDays = Array.from({ length: mDays }, (_, i) => mStart + i * DAY)
+  const firstWeekday = new Date(mStart + 12 * HOUR).getUTCDay()
+  // Follow the picked day when it moves to another month (e.g. "ว่างอีกครั้ง")
+  useEffect(() => {
+    const a = new Date(today + 7 * HOUR), b = new Date(safeDay + 7 * HOUR)
+    setCalMonth((b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth())
+  }, [safeDay, today])
   const relDay = (t: number) => {
     const d = startOfBkkDay(t)
     return d === today ? 'วันนี้' : d === today + DAY ? 'พรุ่งนี้' : dayLabel(t)
@@ -294,12 +316,31 @@ export default function AvailabilitySection() {
         {isProv ? 'แตะวันที่ต้องการรับพัสดุ' : 'แตะวันที่ต้องการรับกล้อง'}
         {model !== 'all' && <> · สีคือคิวของ <b className="text-ink">{shortName(model)}</b></>}
       </p>
+      <div className="flex items-center justify-between mb-1.5">
+        <button
+          onClick={() => setCalMonth(Math.max(0, shownMonth - 1))}
+          disabled={shownMonth === 0}
+          className="w-10 h-10 flex items-center justify-center rounded-full text-pink-700 disabled:text-ink/20"
+          aria-label="เดือนก่อนหน้า"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <p className="text-sm font-semibold text-ink" aria-live="polite">{F_MONTH.format(new Date(mStart + 12 * HOUR))}</p>
+        <button
+          onClick={() => setCalMonth(Math.min(maxMonth, shownMonth + 1))}
+          disabled={shownMonth === maxMonth}
+          className="w-10 h-10 flex items-center justify-center rounded-full text-pink-700 disabled:text-ink/20"
+          aria-label="เดือนถัดไป"
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
       <div className="grid grid-cols-7 text-center text-[11px] text-ink/50 mb-1" aria-hidden>
         {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((w) => <span key={w}>{w}</span>)}
       </div>
       <div className="grid grid-cols-7 gap-1" aria-busy={!q && !failed}>
         {Array.from({ length: firstWeekday }, (_, i) => <span key={`pad${i}`} />)}
-        {days.map((d) => (
+        {monthDays.map((d) => (
           <DayCell
             key={d}
             d={d}
@@ -308,7 +349,7 @@ export default function AvailabilitySection() {
             status={statuses.get(d)}
             loaded={Boolean(q)}
             selected={d === safeDay}
-            disabled={d < earliestDay}
+            disabled={d < earliestDay || d > lastDay}
             onPick={setDay}
           />
         ))}
