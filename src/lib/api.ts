@@ -141,9 +141,12 @@ function newRequestKey() {
 // Start of yesterday (local time): anything that ended before it can't clash
 // with a new booking. Shared by every caller so they ask for the exact same URL
 // and hit the same CDN cache entry.
+// The Saturday on or before yesterday: the URL (the CDN cache key) then
+// changes once a week instead of every day, so the first visitor each day
+// doesn't wait on Apps Script. A few extra old slots in the reply are harmless.
 export function queueFromDate(): Date {
   const d = new Date()
-  d.setDate(d.getDate() - 1)
+  d.setDate(d.getDate() - d.getDay() - 1)
   d.setHours(0, 0, 0, 0)
   return d
 }

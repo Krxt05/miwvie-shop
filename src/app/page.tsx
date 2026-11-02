@@ -215,6 +215,7 @@ export default function Home() {
             </a>
             <Link
               href="/my-bookings"
+              prefetch={false}
               aria-label="ประวัติการจอง"
               className="inline-flex items-center gap-1 rounded-full border border-pink-700/30 text-pink-700 text-xs sm:text-sm font-medium px-2.5 sm:px-3 py-1.5 sm:py-2 hover:bg-pink-700/5 transition-colors whitespace-nowrap"
             >
@@ -296,6 +297,7 @@ export default function Home() {
             <Link
               key={c.id}
               href={`/book?camera=${c.id}`}
+              prefetch={false}
               className={`group min-w-0 flex ${wide ? 'col-span-2 flex-row md:flex-col' : 'flex-col'} ${i < 3 ? 'md:col-span-2' : 'md:col-span-3'} lg:col-span-1 bg-white rounded-2xl overflow-hidden ring-1 ring-pink-900/[0.07] hover:ring-pink-700/30 hover:shadow-[0_20px_40px_-20px_rgba(69,18,31,0.35)] transition-all duration-300`}
             >
               <div
@@ -364,7 +366,7 @@ export default function Home() {
                 </div>
               </dl>
               <div className="mt-4 pt-3 border-t border-pink-900/[0.08] flex flex-col gap-1 text-sm">
-                <Link href="/my-bookings" className="min-h-11 flex items-center justify-between text-pink-700 font-medium">
+                <Link href="/my-bookings" prefetch={false} className="min-h-11 flex items-center justify-between text-pink-700 font-medium">
                   <span className="flex items-center gap-2"><ClipboardList size={16} /> เคยจองแล้ว? ดูการจองของฉัน</span>
                   <ArrowRight size={15} />
                 </Link>
@@ -739,6 +741,7 @@ function HeroSlides() {
                 alt=""
                 width={sl.w}
                 height={460}
+                sizes="(min-width:1024px) 210px, 45vw"
                 className="absolute -bottom-6 right-[-4%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
                 style={{ width: `${(46 * sl.w) / 522}%` }}
               />

@@ -6,15 +6,12 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://miwvie-shop.vercel.app'),
   title: 'MIWVIE SHOP — เช่ากล้องดิจิตอล มมส.',
   description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก',
-  icons: {
-    icon: '/logo.png',
-    apple: '/logo.png',
-    shortcut: '/logo.png',
-  },
+  // Favicon / home-screen icon: small copies in src/app (icon.png, apple-icon.png),
+  // not the 291 KB logo.png
   openGraph: {
     title: 'MIWVIE SHOP',
     description: 'เช่ากล้องดิจิตอล Canon IXY ราคาถูก',
-    images: ['/logo.png'],
+    images: ['/og.jpg'],
   },
 }
 

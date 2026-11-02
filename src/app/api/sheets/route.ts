@@ -131,16 +131,18 @@ export async function GET(request: NextRequest) {
   }
 
   // Queue reads take Apps Script 3-20s. Let Vercel's CDN keep a good answer for
-  // 30s and keep serving it (while refreshing in the background) for up to 10
-  // min, so customers almost never wait on Apps Script. Safe: createBooking
-  // re-checks the live sheet, so a slot taken in the meantime is still refused.
+  // 30s, and after that keep serving it (while refreshing in the background)
+  // for up to a day — so even the first visitor after a quiet spell doesn't
+  // wait on Apps Script; the one after them gets fresh data. Safe:
+  // createBooking re-checks the live sheet, so a slot taken in the meantime is
+  // still refused.
   if (payload?.error) return NextResponse.json(payload)
   if (action === 'getPublicAvailability') {
     // A summary for browsing; the booking page re-checks the live queue
-    return NextResponse.json(payload, { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=600' } })
+    return NextResponse.json(payload, { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=86400' } })
   }
   return NextResponse.json(payload, QUEUE_ACTIONS.has(action)
-    ? { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=600' } }
+    ? { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=86400' } }
     : undefined)
 }
 

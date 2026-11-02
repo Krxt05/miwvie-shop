@@ -102,15 +102,26 @@ export default function QueueHeatmap() {
   useEffect(() => {
     const el = ref.current
     if (!el) return
+    // Fetch as soon as the browser is idle after load (the reply is tiny), or
+    // when the section nears the screen, whichever comes first
     let started = false
-    const io = new IntersectionObserver((entries) => {
-      if (!entries.some((e) => e.isIntersecting) || started) return
+    const start = () => {
+      if (started) return
       started = true
       io.disconnect()
       fetchPublicQueue().then(setQ).catch(() => setFailed(true))
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) start()
     }, { rootMargin: '400px' })
     io.observe(el)
-    return () => io.disconnect()
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
+    const idle = w.requestIdleCallback ? w.requestIdleCallback(start, { timeout: 4000 }) : window.setTimeout(start, 2000)
+    return () => {
+      io.disconnect()
+      if (w.cancelIdleCallback) w.cancelIdleCallback(idle)
+      else window.clearTimeout(idle)
+    }
   }, [])
 
   const free = useMemo<FreeMap | null>(() => (q ? buildFree(q) : null), [q])

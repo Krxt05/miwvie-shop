@@ -14,7 +14,9 @@ import {
 import { getCameraQueue, createBooking, attachImages, validateDiscountCode, queueFromDate } from '@/lib/api'
 import HourlyTimeline from '@/components/HourlyTimeline'
 import DayRangePicker from '@/components/DayRangePicker'
-import ReceiptCard from '@/components/ReceiptCard'
+import dynamic from 'next/dynamic'
+// Only needed on the last step; keeps the QR-code library out of the first load
+const ReceiptCard = dynamic(() => import('@/components/ReceiptCard'), { ssr: false })
 import Button from '@/components/ui/Button'
 import { rememberBooking, bookingPath } from '@/lib/myBookings'
 import { Closure, handoverError } from '@/lib/closures'
