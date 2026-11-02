@@ -17,7 +17,7 @@ import Image from 'next/image'
 import { ArrowRight, ChevronDown, Instagram, MessageCircle, Minus, Plus, Search, X } from 'lucide-react'
 import { CameraId, PriceGroup, RentalArea } from '@/types'
 import {
-  CAMERAS, DELIVERY_HOURS_LABEL, LOCAL_DELIVERY_FEE, MIN_PROVINCIAL_DURATION_HOURS,
+  CAMERAS, DELIVERY_HOURS_LABEL, LINE_URL, LOCAL_DELIVERY_FEE, MIN_PROVINCIAL_DURATION_HOURS,
   PRICE_TABLES, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, calcPrice,
 } from '@/lib/cameras'
 import { FreeMap, PublicQueue, bkkHour, buildFree, fetchPublicQueue, fitsFast, startOfBkkDay } from '@/lib/publicQueue'
@@ -26,7 +26,6 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const DAYS_SHOWN = 30
 const STRIP_DAYS = 7
-const LINE_OA_MESSAGE = 'https://line.me/R/oaMessage/%40005vsebr/?'
 // IG can't prefill a message, so the button copies it first, then opens the chat
 const IG_DM = 'https://ig.me/m/miwvie_shop'
 const UI_KEY = 'miwvie_avail_ui_v3'
@@ -48,7 +47,6 @@ const CHEAP_GROUP: PriceGroup | null = GROUPS.length > 1
 const F_DAY = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' })
 const F_WD = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short' })
 const F_DM = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })
-const F_RANGE = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' })
 const pad = (n: number) => String(n).padStart(2, '0')
 const bkkDate = (t: number) => new Date(t + 7 * HOUR).toISOString().slice(0, 10)
 const dayLabel = (t: number) => F_DAY.format(new Date(t))
@@ -77,7 +75,6 @@ export default function AvailabilitySection() {
   const [calOpen, setCalOpen] = useState(false)
   const [fullOpen, setFullOpen] = useState(false)
   const [showStarts, setShowStarts] = useState(false)
-  const [igCopied, setIgCopied] = useState(false)
   const [restored, setRestored] = useState<string | null>(null)
   const [ready, setReady] = useState(false) // don't overwrite storage before restoring
   const hours = durs[area]
@@ -284,7 +281,6 @@ export default function AvailabilitySection() {
   const inMore = !basic.includes(hours)
   const bookHref = (id: string) =>
     `/book?camera=${id}&area=${area}&start=${encodeURIComponent(isProv ? bkkDate(start) : `${bkkDate(start)}T${pad(safeHour)}:00`)}&hours=${hours}&from=home`
-  const waitText = `สนใจรอคิว ${(fullList.length ? fullList : results).map((r) => r.c.shortName).join(', ')} ${isProv ? 'ส่งต่างจังหวัด ' : ''}${F_RANGE.format(new Date(start))}${isProv ? '' : ` ${timeLabel(start)}`} – ${F_RANGE.format(new Date(end))}${isProv ? '' : ` ${timeLabel(end)}`}`
   const firstWeekday = new Date(today + 12 * HOUR).getUTCDay()
   const relDay = (t: number) => {
     const d = startOfBkkDay(t)
@@ -434,7 +430,7 @@ export default function AvailabilitySection() {
                 aria-label="เวลารับ"
               >
                 {hourOpts.map((h) => (
-                  <option key={h} value={h}>{pad(h)}:00{h < OPEN_FROM || h > OPEN_TO ? ' (รับเอง)' : ''}</option>
+                  <option key={h} value={h}>{pad(h)}:00</option>
                 ))}
               </select>
             </label>
@@ -496,7 +492,7 @@ export default function AvailabilitySection() {
               <div className="mt-3">
                 {okList.length > 0 && (
                   <button onClick={() => setFullOpen((v) => !v)} aria-expanded={fullOpen} className="min-h-9 text-xs text-ink/60">
-                    {model === 'all' ? 'รุ่นที่ไม่ว่างในช่วงนี้' : 'ไม่ว่างในช่วงนี้'} · {fullOpen ? 'ซ่อน' : 'ดูวันที่ว่าง ›'}
+                    {model === 'all' ? 'รุ่นที่ไม่ว่างในช่วงเวลาที่เลือก' : 'ไม่ว่างในช่วงเวลาที่เลือก'} · {fullOpen ? 'ซ่อน' : 'ดูวันที่ว่าง ›'}
                   </button>
                 )}
                 {(fullOpen || okList.length === 0) && (
@@ -517,7 +513,7 @@ export default function AvailabilitySection() {
                       <p className="text-xs text-ink/60 mb-1.5">ต้องการรอคิวรุ่นที่ไม่ว่าง ติดต่อร้านได้ทาง LINE หรือ IG</p>
                       <div className="grid grid-cols-2 gap-2">
                         <a
-                          href={`${LINE_OA_MESSAGE}${encodeURIComponent(waitText)}`}
+                          href={LINE_URL}
                           target="_blank"
                           rel="noreferrer"
                           className="min-h-11 rounded-xl border border-[#06C755]/40 text-[#05A647] text-sm font-medium flex items-center justify-center gap-1.5"
@@ -528,13 +524,11 @@ export default function AvailabilitySection() {
                           href={IG_DM}
                           target="_blank"
                           rel="noreferrer"
-                          onClick={() => { navigator.clipboard?.writeText(waitText).then(() => setIgCopied(true)).catch(() => {}) }}
                           className="min-h-11 rounded-xl border border-pink-900/20 text-pink-700 text-sm font-medium flex items-center justify-center gap-1.5"
                         >
                           <Instagram size={16} /> ติดต่อทาง IG
                         </a>
                       </div>
-                      {igCopied && <p className="text-[11px] text-ink/50 mt-1.5">คัดลอกข้อความแล้ว สามารถวางในแชท IG ได้ทันที</p>}
                     </div>
                   </div>
                 )}

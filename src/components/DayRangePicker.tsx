@@ -155,7 +155,7 @@ export default function DayRangePicker({
                     : tooSoon ? `ต้องจองล่วงหน้าอย่างน้อย ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`
                     : shipClosed ? 'ร้านปิดช่วงส่งพัสดุ'
                     : available ? 'เลือกวันนี้เป็นวันเริ่มเช่าได้'
-                    : 'คิวไม่ว่างช่วงนี้'
+                    : 'คิวไม่ว่างในช่วงเวลานี้'
                 }
                 className={clsx(
                   'aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-all',
