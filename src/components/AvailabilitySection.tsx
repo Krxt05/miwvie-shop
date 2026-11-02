@@ -17,7 +17,7 @@ import Image from 'next/image'
 import { ArrowRight, ChevronDown, Instagram, MessageCircle, Minus, Plus, Search, X } from 'lucide-react'
 import { CameraId, PriceGroup, RentalArea } from '@/types'
 import {
-  CAMERAS, DELIVERY_HOURS_LABEL, INCLUDED_ACCESSORIES, LOCAL_DELIVERY_FEE, MIN_PROVINCIAL_DURATION_HOURS,
+  CAMERAS, DELIVERY_HOURS_LABEL, LOCAL_DELIVERY_FEE, MIN_PROVINCIAL_DURATION_HOURS,
   PRICE_TABLES, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, calcPrice,
 } from '@/lib/cameras'
 import { FreeMap, PublicQueue, bkkHour, buildFree, fetchPublicQueue, fitsFast, startOfBkkDay } from '@/lib/publicQueue'
@@ -37,7 +37,7 @@ const MORE_DURATIONS: Record<RentalArea, number[]> = { local: [96, 120, 144, 168
 const DEFAULT_DURS: Record<RentalArea, number> = { local: 24, provincial: MIN_PROVINCIAL_DURATION_HOURS }
 const OPEN_FROM = 10 // delivery hours; outside them it's self pickup/return
 const OPEN_TO = 22
-const SHOP_HOURS = Array.from({ length: OPEN_TO - OPEN_FROM + 1 }, (_, i) => OPEN_FROM + i)
+const ALL_HOURS = Array.from({ length: 24 }, (_, h) => h)
 
 // The cheaper price group gets a neutral "ราคาประหยัด" tag (only if groups differ)
 const GROUPS = Array.from(new Set(CAMERAS.map((c) => c.priceGroup)))
@@ -74,8 +74,6 @@ export default function AvailabilitySection() {
   const [hour, setHour] = useState(OPEN_FROM)
   const [advOpen, setAdvOpen] = useState(false)
   const [moreDur, setMoreDur] = useState(false)
-  const [timeOpen, setTimeOpen] = useState(false)
-  const [otherHours, setOtherHours] = useState(false)
   const [calOpen, setCalOpen] = useState(false)
   const [fullOpen, setFullOpen] = useState(false)
   const [showStarts, setShowStarts] = useState(false)
@@ -101,7 +99,6 @@ export default function AvailabilitySection() {
         if (s.day && s.day >= today) setDay(s.day)
         const h = s.durs[s.area]
         if (h && h !== 24 && !BASIC_DURATIONS[s.area].includes(h)) setMoreDur(true)
-        if (s.hour < OPEN_FROM || s.hour > OPEN_TO) setOtherHours(true)
         const changed = s.model !== 'all' || s.area !== 'local' || h !== 24
         if (!sameVisit && changed) {
           setRestored(`${s.area === 'provincial' ? 'ส่งต่างจังหวัด · ' : ''}${s.model === 'all' ? 'ทุกรุ่น' : shortName(s.model)} · ${durLabel(h)}`)
@@ -147,11 +144,8 @@ export default function AvailabilitySection() {
   const end = start + hours * HOUR
   const pastToday = !isProv && safeDay === today && bkkHour(now) >= 23
 
-  // Pickup hours offered: shop hours by default, the rest on request
-  const shopOpts = SHOP_HOURS.filter((h) => safeDay !== today || h >= firstHourToday)
-  const showOther = otherHours || safeHour < OPEN_FROM || safeHour > OPEN_TO || shopOpts.length === 0
-  const hourOpts = (showOther ? Array.from({ length: 24 }, (_, h) => h) : SHOP_HOURS)
-    .filter((h) => safeDay !== today || h >= firstHourToday)
+  // Every hour can be picked; outside delivery hours means self pickup
+  const hourOpts = ALL_HOURS.filter((h) => safeDay !== today || h >= firstHourToday)
 
   const check = (id: string, s: number, h = hours) =>
     free && q ? fitsFast(q, free, id, area, s, s + h * HOUR) : 'unknown'
@@ -269,7 +263,6 @@ export default function AvailabilitySection() {
     setDay(startOfBkkDay(t))
     if (!isProv) {
       setHour(bkkHour(t))
-      if (bkkHour(t) < OPEN_FROM || bkkHour(t) > OPEN_TO) setOtherHours(true)
     }
     if (id && model !== 'all') setModel(id)
   }
@@ -283,13 +276,12 @@ export default function AvailabilitySection() {
   function resetRestored() {
     setRestored(null)
     setArea('local'); setDurs(DEFAULT_DURS); setModel('all'); setDay(today + DAY); setHour(OPEN_FROM)
-    setMoreDur(false); setOtherHours(false)
+    setMoreDur(false)
   }
 
   const basic = BASIC_DURATIONS[area]
   const more = MORE_DURATIONS[area]
   const inMore = !basic.includes(hours)
-  const outsideHours = !isProv && (safeHour < OPEN_FROM || safeHour > OPEN_TO || bkkHour(end) < OPEN_FROM || bkkHour(end) > OPEN_TO)
   const bookHref = (id: string) =>
     `/book?camera=${id}&area=${area}&start=${encodeURIComponent(isProv ? bkkDate(start) : `${bkkDate(start)}T${pad(safeHour)}:00`)}&hours=${hours}&from=home`
   const waitText = `สนใจรอคิว ${(fullList.length ? fullList : results).map((r) => r.c.shortName).join(', ')} ${isProv ? 'ส่งต่างจังหวัด ' : ''}${F_RANGE.format(new Date(start))}${isProv ? '' : ` ${timeLabel(start)}`} – ${F_RANGE.format(new Date(end))}${isProv ? '' : ` ${timeLabel(end)}`}`
@@ -330,7 +322,7 @@ export default function AvailabilitySection() {
         <span className="flex items-center gap-1"><i className="w-2 h-1.5 rounded-full bg-pink-700" />ว่างบางเวลา</span>
         <span className="flex items-center gap-1"><s>8</s> เต็มแล้ว</span>
         <span className="flex items-center gap-1"><i className="w-3 h-3 rounded-sm bg-white ring-1 ring-pink-900/15" />ยังไม่เปิดคิว</span>
-        <span className="text-ink/45 w-full">สีขึ้นกับรุ่นและจำนวนวันที่เลือก</span>
+        <span className="text-ink/45 w-full">ขอสงวนสิทธิในการเลือกสี</span>
       </div>
     </div>
   )
@@ -430,13 +422,8 @@ export default function AvailabilitySection() {
               ? `ถึงมือ ${relDay(start)} · ส่งคืน ${relDay(end)} (${durLabel(hours)})`
               : `รับ ${relDay(start)} ${timeLabel(start)} · คืน ${relDay(end)} ${timeLabel(end)} (${durLabel(hours)})`}
           </p>
-          {!isProv && (
-            <button onClick={() => setTimeOpen((v) => !v)} aria-expanded={timeOpen} className="shrink-0 min-h-9 text-xs text-pink-700 font-medium">
-              {timeOpen ? 'ซ่อน' : 'เปลี่ยนเวลา ›'}
-            </button>
-          )}
         </div>
-        {!isProv && timeOpen && (
+        {!isProv && (
           <div className="mt-2 space-y-1.5">
             <label className="text-xs text-ink/60 flex items-center justify-between gap-2">
               <span>เวลารับ</span>
@@ -447,18 +434,12 @@ export default function AvailabilitySection() {
                 aria-label="เวลารับ"
               >
                 {hourOpts.map((h) => (
-                  <option key={h} value={h}>{pad(h)}:00{h < OPEN_FROM || h > OPEN_TO ? ' (รับที่ร้านเท่านั้น)' : ''}</option>
+                  <option key={h} value={h}>{pad(h)}:00{h < OPEN_FROM || h > OPEN_TO ? ' (รับเอง)' : ''}</option>
                 ))}
               </select>
             </label>
-            {!showOther && (
-              <button onClick={() => setOtherHours(true)} className="min-h-9 text-xs text-ink/60 underline underline-offset-2">
-                เวลาอื่น (รับที่ร้านเท่านั้น)
-              </button>
-            )}
           </div>
         )}
-        {outsideHours && <p className="text-xs text-ink/55 mt-1">นอก {DELIVERY_HOURS_LABEL} ไม่มีบริการส่งถึงที่ — กรุณารับหรือคืนกล้องที่ร้าน</p>}
         {pastToday && <p className="text-xs text-ink/55 mt-1">วันนี้ใกล้หมดเวลาให้บริการ กรุณาเลือกวันอื่น</p>}
       </div>
 
@@ -480,9 +461,6 @@ export default function AvailabilitySection() {
               <button onClick={() => setModel('all')} className="mb-2 inline-flex items-center gap-1 min-h-9 rounded-full bg-cream px-3 text-xs text-ink/70">
                 แสดงเฉพาะ {shortName(model)} · ดูทุกรุ่น <X size={13} />
               </button>
-            )}
-            {okList.length > 0 && model === 'all' && (
-              <p className="text-xs text-ink/55 mb-2">แต่ละรุ่นมีความคมชัด การซูม และระบบกันสั่นแตกต่างกัน ดูภาพตัวอย่างได้ด้านล่าง หรือสอบถามร้านเพื่อช่วยเลือกรุ่น</p>
             )}
             {okList.length === 0 && fullList.length > 0 && (
               <p className="text-sm text-ink/70 mb-2">ช่วงเวลานี้กล้องไม่ว่างทุกรุ่น กรุณาเลือกวันอื่น หรือใช้ปุ่มค้นหาวันว่าง</p>
@@ -566,12 +544,6 @@ export default function AvailabilitySection() {
         )}
       </div>
 
-      <p className="text-[11px] leading-relaxed text-ink/55 border-t border-pink-900/[0.08] pt-3">
-        เอกสารที่ใช้ในการจอง: รูปบัตรประชาชน (ปิดเลขบัตรได้) และภาพหน้าจอโปรไฟล์ IG/FB · ชำระค่าเช่าเต็มจำนวน ไม่มีมัดจำ
-        <span className="block mt-0.5">ในกระเป๋ามี {INCLUDED_ACCESSORIES.join(' · ')}</span>
-        <span className="block text-ink/40 mt-0.5">ข้อมูลคิวอาจล่าช้ากว่าความจริงเล็กน้อย ระบบจะตรวจสอบอีกครั้งเมื่อทำการจอง</span>
-      </p>
-
       {/* detailed tools */}
       <div className="border-t border-pink-900/[0.08] pt-1">
         <button
@@ -618,7 +590,7 @@ export default function AvailabilitySection() {
                         <button
                           key={h}
                           disabled={st !== 'free'}
-                          onClick={() => { setHour(h); if (h < OPEN_FROM || h > OPEN_TO) setOtherHours(true) }}
+                          onClick={() => setHour(h)}
                           aria-label={`${shortName(id)} รับ ${pad(h)}:00 ${st === 'free' ? 'ได้' : 'ไม่ได้'}`}
                           className={`flex-1 ${h === safeHour ? 'outline outline-2 outline-ink -outline-offset-2 z-10' : ''} ${
                             st === 'free' ? 'bg-pink-200 hover:bg-pink-300' : st === 'unknown' ? 'bg-cream' : 'bg-white'
