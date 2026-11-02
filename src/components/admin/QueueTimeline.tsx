@@ -218,7 +218,7 @@ export default function QueueTimeline({ bookings, blocks, onOpenBooking, onBlock
         </button>
       </div>
 
-      <div ref={scroller} className="overflow-x-auto -mx-3 px-3">
+      <div ref={scroller} className="overflow-x-auto overscroll-x-contain rounded-lg">
         <div style={{ width: trackWidth ? LABEL_PX + trackWidth : undefined }}>
           {/* Day header */}
           <div className="flex">

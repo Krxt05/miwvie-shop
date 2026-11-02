@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
@@ -14,6 +13,10 @@ import {
   Package,
   ClipboardList,
   MessageCircle,
+  Banknote,
+  Wallet,
+  UserCheck,
+  Clock,
 } from 'lucide-react'
 import {
   CAMERAS,
@@ -28,6 +31,7 @@ import {
   SHOP_MAP_URL,
   LOCAL_DELIVERY_FEE,
   LINE_URL,
+  DELIVERY_LOCATION,
 } from '@/lib/cameras'
 import { PriceTable } from '@/types'
 
@@ -47,6 +51,10 @@ const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
 // stayed smooth; with this (plus /book no longer reading the URL while
 // rendering) it's smooth on the owner's iPhone. Keep both.
 const BOOK_HREF = '/book?from=home'
+
+// 1-day price across the price groups, e.g. "150–190"
+const DAY1 = Object.values(PRICE_TABLES).map((t) => t.day1)
+const DAY1_RANGE = Math.min(...DAY1) === Math.max(...DAY1) ? `${DAY1[0]}` : `${Math.min(...DAY1)}–${Math.max(...DAY1)}`
 
 const TOTAL_UNITS = CAMERAS.reduce((n, c) => n + c.quantity, 0)
 
@@ -89,9 +97,9 @@ const GALLERY = [
 ]
 
 const STEPS = [
-  { title: 'เลือกวัน แล้วจอง', desc: 'ดูคิวว่าง เลือกรุ่นและเวลารับ กรอกข้อมูลจองได้เลย' },
+  { title: 'เลือกวัน แล้วจอง', desc: 'ตรวจสอบคิวว่าง เลือกรุ่นและเวลารับ แล้วกรอกข้อมูลการจอง' },
   { title: 'โอนเต็ม ไม่มีมัดจำ', desc: 'สแกน PromptPay แนบสลิป พร้อมรูปบัตรประชาชน (ปิดเลขได้) + โปรไฟล์ IG/FB' },
-  { title: 'รับกล้องไปถ่าย', desc: 'รับเองฟรีหรือให้ร้านส่ง นับ 24 ชม. จากเวลารับจริง' },
+  { title: 'รับกล้องไปถ่าย', desc: 'รับที่ร้านหรือให้ร้านจัดส่ง นับ 24 ชั่วโมงจากเวลารับจริง' },
 ]
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
@@ -113,7 +121,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: 'ต้องใช้เอกสารอะไรบ้าง?',
-    a: 'รูปบัตรประชาชน (ปิดเลขบัตรได้) และแคปหน้าโปรไฟล์ IG หรือ Facebook ที่ยืนยันได้ว่าเป็นคนเดียวกัน',
+    a: 'รูปบัตรประชาชน (ปิดเลขบัตรได้) และภาพหน้าจอโปรไฟล์ IG หรือ Facebook ของผู้เช่า',
   },
   {
     q: 'นับเวลาเช่ายังไง?',
@@ -125,7 +133,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: 'อยู่ต่างจังหวัดเช่าได้ไหม?',
-    a: `ได้ ร้านส่งพัสดุไปให้ ค่าส่งขาไป ${PROVINCIAL_SHIPPING_FEE}฿ ขากลับลูกค้าส่งคืนเอง เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน และต้องจองล่วงหน้าอย่างน้อย ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`,
+    a: `ได้ ร้านจัดส่งทางพัสดุ ค่าส่งขาไป ${PROVINCIAL_SHIPPING_FEE}฿ ขากลับลูกค้าส่งคืนเอง เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน และต้องจองล่วงหน้าอย่างน้อย ${PROVINCIAL_SHIP_LEAD_DAYS} วัน`,
   },
   {
     q: 'เช่าเกิน 7 วันคิดยังไง?',
@@ -166,11 +174,11 @@ const HIDE_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 
 export default function Home() {
   const [showBar, setShowBar] = useState(false)
-  const heroCtaRef = useRef<HTMLDivElement>(null)
+  const checkerRef = useRef<HTMLDivElement>(null)
 
-  // Mobile booking bar appears once the hero's own buttons have scrolled up out of view
+  // Mobile booking bar appears once the queue checker has scrolled up out of view
   useEffect(() => {
-    const el = heroCtaRef.current
+    const el = checkerRef.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([e]) => {
       setShowBar(!e.isIntersecting && e.boundingClientRect.top < 0)
@@ -234,91 +242,80 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ───────── Hero ───────── */}
-      <section className="relative">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: 'radial-gradient(60% 60% at 85% 20%, rgba(140,43,63,0.10), transparent 70%)' }}
-        />
-        <div className="relative grid lg:grid-cols-[1.05fr_1fr] gap-7 lg:gap-8 items-center px-4 sm:px-6 pt-6 sm:pt-14 lg:pt-20 pb-10 lg:pb-24 max-w-6xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: 'easeOut' }}
-          >
-            <p className="inline-flex items-center gap-2 text-xs font-medium tracking-[0.18em] uppercase text-pink-700/80">
-              <span className="w-6 h-px bg-pink-700/50" />
-              Canon IXY · Camera Rental · มมส.
-            </p>
-            <h1 className="font-display text-[2.35rem] leading-[1.2] sm:text-6xl sm:leading-[1.15] lg:text-[3.4rem] xl:text-6xl font-bold mt-3 sm:mt-5 text-ink">
-              <span className="whitespace-nowrap">เช่ากล้องดิจิตอล</span>
-              <br />
-              <span className="whitespace-nowrap">
-                <span className="italic text-pink-700">โทน Y2K</span> สวยทุกช็อต
-              </span>
-            </h1>
-            <ul className="flex flex-wrap gap-2 mt-4 sm:mt-6">
-              {[`เริ่ม ${MIN_PRICE}฿`, 'ไม่มีมัดจำ', 'รับฟรีที่ มมส.'].map((t) => (
-                <li key={t} className="rounded-full bg-white ring-1 ring-pink-900/10 px-3.5 py-1.5 text-sm text-ink/80">
-                  {t}
-                </li>
-              ))}
-            </ul>
-            <div ref={heroCtaRef} className="grid grid-cols-2 sm:flex gap-3 mt-5 sm:mt-8">
-              <a
-                href="#availability"
-                className="group inline-flex items-center justify-center gap-2 bg-pink-700 text-cream font-medium rounded-full px-5 sm:px-7 py-3.5 sm:py-4 text-base hover:bg-pink-600 transition-all shadow-[0_10px_30px_-10px_rgba(110,31,49,0.7)]"
-              >
-                เช็กคิวว่าง
-                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-              </a>
-              <Link
-                href={BOOK_HREF}
-                className="inline-flex items-center justify-center gap-2 rounded-full px-5 sm:px-7 py-3.5 sm:py-4 text-base text-ink border border-ink/15 hover:border-ink/40 transition-colors"
-              >
-                จองเลย
-              </Link>
-            </div>
-            <p className="text-xs sm:text-sm text-ink/50 mt-3 sm:mt-4">
-              Canon IXY {CAMERAS.length} รุ่น อุปกรณ์ครบชุด · ส่งรูปรีวิว 4 รูป รับส่วนลด 10% ครั้งถัดไป
-            </p>
-          </motion.div>
-
-          {/* Visual: photo + a second print + the camera that took it (shorter on phones) */}
-          <div className="relative mx-auto w-full max-md:aspect-[5/3] md:max-w-[400px] lg:max-w-[440px] md:aspect-[4/5]">
-            <div className="absolute inset-y-0 right-0 w-full md:w-[78%] rounded-[1.75rem] md:rounded-b-none md:rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
-              <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, (min-width:768px) 320px, 92vw" className="object-cover max-md:object-[50%_40%]" />
-            </div>
-            <div className="hidden md:block absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
-              <div className="relative aspect-[3/4]">
-                <Image src="/mood/ixy30s-2.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill sizes="180px" className="object-cover" />
+      {/* ───────── Top: queue checker first, key facts beside/below it ─────────
+          The old headline/CTA block is gone: customers come to check dates,
+          so the checker is the first thing on the page. */}
+      <section className="px-4 sm:px-6 pt-4 sm:pt-10 pb-12 sm:pb-24 max-w-6xl mx-auto">
+        <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 lg:gap-y-6 items-start">
+          {/* Visual: photo + a second print + the camera that took it (the owner's
+              favourite part of the old hero — kept as it was; shorter on phones) */}
+          <div className="min-w-0 lg:col-start-2 lg:row-start-1 pb-4 md:pb-6">
+            <div className="relative mx-auto w-full max-md:aspect-[5/3] md:max-w-[400px] lg:max-w-[440px] md:aspect-[4/5]">
+              <div className="absolute inset-y-0 right-0 w-full md:w-[78%] rounded-[1.75rem] md:rounded-b-none md:rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
+                <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, (min-width:768px) 320px, 92vw" className="object-cover max-md:object-[50%_40%]" />
               </div>
-              <p className="absolute bottom-1 left-0 right-0 text-center font-display italic text-[11px] text-ink/60">shot on IXY 30s</p>
-            </div>
-            <Image
-              src="/cameras/ixy30s-new.png"
-              alt=""
-              width={522}
-              height={460}
-              className="absolute -bottom-4 md:-bottom-6 right-[-2%] md:right-[-4%] w-[34%] md:w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
-            />
-            <div
-              className="absolute top-3 left-3 md:top-[6%] md:left-[4%] w-16 h-16 md:w-24 md:h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
-              style={{ background: 'radial-gradient(circle at 35% 30%, #EBD39B, #C9A45C 60%, #A07D3B)' }}
-            >
-              <span className="text-[8px] md:text-[10px] font-semibold">รีวิวรับ</span>
-              <span className="font-display text-xl md:text-3xl font-bold leading-none">10%</span>
-              <span className="text-[7px] md:text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
+              <div className="hidden md:block absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
+                <div className="relative aspect-[3/4]">
+                  <Image src="/mood/ixy30s-2.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill sizes="180px" className="object-cover" />
+                </div>
+                <p className="absolute bottom-1 left-0 right-0 text-center font-display italic text-[11px] text-ink/60">shot on IXY 30s</p>
+              </div>
+              <Image
+                src="/cameras/ixy30s-new.png"
+                alt=""
+                width={522}
+                height={460}
+                className="absolute -bottom-4 md:-bottom-6 right-[-2%] md:right-[-4%] w-[34%] md:w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
+              />
+              <div
+                className="absolute top-3 left-3 md:top-[6%] md:left-[4%] w-16 h-16 md:w-24 md:h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
+                style={{ background: 'radial-gradient(circle at 35% 30%, #EBD39B, #C9A45C 60%, #A07D3B)' }}
+              >
+                <span className="text-[8px] md:text-[10px] font-semibold">รีวิวรับ</span>
+                <span className="font-display text-xl md:text-3xl font-bold leading-none">10%</span>
+                <span className="text-[7px] md:text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* ───────── Availability ───────── */}
-      <section id="availability" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-3xl mx-auto ${SCROLL_MT}`}>
-        <SectionHead eyebrow="Availability" title="เช็กคิวว่าง" aside="เลือกวัน ดูรุ่นที่ว่าง แล้วจองต่อได้เลย" />
-        <div className="min-h-[640px]">
-          <AvailabilitySection />
+          <div id="availability" className={`min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 ${SCROLL_MT}`}>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">เช่ากล้องดิจิตอล Canon IXY ใกล้ มมส.</h1>
+            <p className="text-sm text-ink/60 mt-1 mb-4">เลือกวันรับกล้อง เพื่อดูรุ่นที่ว่างและราคา</p>
+            <div ref={checkerRef} className="min-h-[640px]">
+              <AvailabilitySection />
+            </div>
+          </div>
+
+          <aside className="min-w-0 lg:col-start-2 lg:row-start-2">
+            <div className="bg-white rounded-2xl ring-1 ring-pink-900/[0.07] p-4 sm:p-5">
+              <h2 className="font-semibold text-ink">ข้อมูลสำคัญก่อนเช่า</h2>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-4 mt-4 text-sm">
+                <Fact icon={Banknote} title={`เริ่มต้น ${MIN_PRICE} บาท / 6 ชั่วโมง`} sub={`1 วัน ${DAY1_RANGE} บาท`} />
+                <Fact icon={Wallet} title="ชำระเต็มจำนวน" sub="ไม่มีมัดจำ" />
+                <Fact
+                  icon={MapPin}
+                  title={`รับ-คืนที่${DELIVERY_LOCATION}`}
+                  sub={<>ซ.วุ่นวาย มมส. · <a href={SHOP_MAP_URL} target="_blank" rel="noopener noreferrer" className="text-pink-700 underline underline-offset-2">ดูแผนที่</a></>}
+                />
+                <Fact icon={UserCheck} title="เอกสารที่ใช้" sub="บัตรประชาชน และโปรไฟล์ IG หรือ Facebook" />
+                <div className="col-span-2">
+                  <Fact icon={Clock} title="นับ 24 ชั่วโมงจากเวลารับกล้องจริง" sub={`ส่งถึงที่ ${LOCAL_DELIVERY_FEE} บาท/เที่ยว (${DELIVERY_HOURS_LABEL} น.)`} />
+                </div>
+              </dl>
+              <div className="mt-4 pt-3 border-t border-pink-900/[0.08] flex flex-col gap-1 text-sm">
+                <Link href="/my-bookings" className="min-h-11 flex items-center justify-between text-pink-700 font-medium">
+                  <span className="flex items-center gap-2"><ClipboardList size={16} /> เคยจองแล้ว? ดูการจองของฉัน</span>
+                  <ArrowRight size={15} />
+                </Link>
+                <p className="text-ink/60">
+                  สอบถามเพิ่มเติม:{' '}
+                  <a href={LINE_URL} target="_blank" rel="noopener noreferrer" className="text-pink-700 underline underline-offset-2">LINE</a>
+                  {' · '}
+                  <a href={IG_URL} target="_blank" rel="noopener noreferrer" className="text-pink-700 underline underline-offset-2">IG @miwvie_shop</a>
+                </p>
+              </div>
+            </div>
+          </aside>
         </div>
       </section>
 
@@ -428,6 +425,7 @@ export default function Home() {
             </table>
           </div>
         </details>
+        <p className="text-sm text-ink/60 mt-3">ส่งรูปรีวิวอย่างน้อย 4 รูป รับโค้ดส่วนลด 10% สำหรับการเช่าครั้งถัดไป</p>
       </section>
 
       {/* ───────── Pickup options ───────── */}
@@ -498,7 +496,7 @@ export default function Home() {
 
       {/* ───────── How it works ───────── */}
       <section id="how" className={`px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto ${SCROLL_MT}`}>
-        <SectionHead eyebrow="How it works" title="จองง่าย 3 ขั้นตอน" />
+        <SectionHead eyebrow="How it works" title="จองยังไง?" />
         <ol className="grid md:grid-cols-3 gap-4 md:gap-6">
           {STEPS.map((s, i) => (
             <li key={s.title} className="flex md:block gap-4">
@@ -537,7 +535,7 @@ export default function Home() {
         {/* Ask first */}
         <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl bg-white ring-1 ring-pink-900/[0.07] px-5 py-4">
           <p className="font-medium">
-            ทักถามก่อนก็ได้ <span className="text-ink/50 font-normal text-sm">ตอบไว</span>
+            สอบถามเพิ่มเติม
           </p>
           <div className="grid grid-cols-2 sm:flex gap-2">
             <a
@@ -626,6 +624,18 @@ function SectionHead({ eyebrow, title, aside }: { eyebrow: string; title: string
         <h2 className="font-display text-[1.75rem] sm:text-4xl font-bold mt-1.5 sm:mt-3">{title}</h2>
       </div>
       {aside && <div className="text-sm text-ink/55">{aside}</div>}
+    </div>
+  )
+}
+
+function Fact({ icon: Icon, title, sub }: { icon: React.ElementType; title: string; sub?: React.ReactNode }) {
+  return (
+    <div className="flex gap-2.5 min-w-0">
+      <Icon size={18} className="text-pink-700 shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        <dt className="font-medium text-ink leading-snug">{title}</dt>
+        {sub && <dd className="text-ink/60 text-xs mt-0.5 leading-snug">{sub}</dd>}
+      </div>
     </div>
   )
 }

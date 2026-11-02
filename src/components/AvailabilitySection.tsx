@@ -303,7 +303,7 @@ export default function AvailabilitySection() {
   const calendar = (
     <div>
       <p className="text-xs text-ink/60 mb-1.5">
-        {isProv ? 'แตะวันที่อยากได้รับของ' : 'แตะวันที่อยากรับกล้อง'}
+        {isProv ? 'แตะวันที่ต้องการรับพัสดุ' : 'แตะวันที่ต้องการรับกล้อง'}
         {model !== 'all' && <> · สีคือคิวของ <b className="text-ink">{shortName(model)}</b></>}
       </p>
       <div className="grid grid-cols-7 text-center text-[11px] text-ink/50 mb-1" aria-hidden>
@@ -329,7 +329,7 @@ export default function AvailabilitySection() {
         <span className="flex items-center gap-1"><i className="w-4 h-1.5 rounded-full bg-pink-700" />ว่างทั้งวัน</span>
         <span className="flex items-center gap-1"><i className="w-2 h-1.5 rounded-full bg-pink-700" />ว่างบางเวลา</span>
         <span className="flex items-center gap-1"><s>8</s> เต็มแล้ว</span>
-        <span className="flex items-center gap-1"><i className="w-3 h-3 rounded-sm bg-white ring-1 ring-pink-900/15" />ยังเปิดดูไม่ได้</span>
+        <span className="flex items-center gap-1"><i className="w-3 h-3 rounded-sm bg-white ring-1 ring-pink-900/15" />ยังไม่เปิดคิว</span>
         <span className="text-ink/45 w-full">สีขึ้นกับรุ่นและจำนวนวันที่เลือก</span>
       </div>
     </div>
@@ -338,14 +338,14 @@ export default function AvailabilitySection() {
   return (
     <div ref={ref} className="bg-white rounded-[2rem] ring-1 ring-pink-900/[0.07] p-4 sm:p-6 space-y-5">
       {restored && (
-        <button onClick={resetRestored} className="inline-flex items-center gap-1.5 min-h-9 rounded-full bg-cream px-3 text-xs text-ink/70" aria-label={`ใช้แบบครั้งก่อน ${restored} — แตะเพื่อล้าง`}>
-          ใช้แบบครั้งก่อน: {restored} <X size={13} />
+        <button onClick={resetRestored} className="inline-flex items-center gap-1.5 min-h-9 rounded-full bg-cream px-3 text-xs text-ink/70" aria-label={`ตัวเลือกครั้งก่อน ${restored} — แตะเพื่อล้าง`}>
+          ตัวเลือกครั้งก่อน: {restored} <X size={13} />
         </button>
       )}
 
       {/* 1 · area */}
       <div>
-        <p className="text-sm font-semibold text-ink mb-2">รับกล้องที่ไหนคะ?</p>
+        <p className="text-sm font-semibold text-ink mb-2">สถานที่รับกล้อง</p>
         <div className="grid grid-cols-2 gap-1 bg-cream rounded-xl p-1" role="tablist" aria-label="พื้นที่เช่า">
           {(['local', 'provincial'] as const).map((a) => (
             <button
@@ -361,14 +361,14 @@ export default function AvailabilitySection() {
         </div>
         <p className="text-xs text-ink/55 mt-1.5 min-h-[2rem]">
           {isProv
-            ? `ส่งพัสดุไปให้ เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน จองล่วงหน้า ${PROVINCIAL_SHIP_LEAD_DAYS} วัน ค่าส่งขาไป ${PROVINCIAL_SHIPPING_FEE}฿ รวมในราคาแล้ว ขากลับส่งคืนเองค่ะ`
-            : `มารับเองที่ร้านฟรี หรือให้ร้านไปส่ง +${LOCAL_DELIVERY_FEE}฿/เที่ยว (${DELIVERY_HOURS_LABEL})`}
+            ? `ส่งพัสดุไปให้ เช่าขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน จองล่วงหน้า ${PROVINCIAL_SHIP_LEAD_DAYS} วัน ค่าส่งขาไป ${PROVINCIAL_SHIPPING_FEE}฿ รวมในราคาแล้ว ผู้เช่าส่งคืนเอง`
+            : `รับที่ร้านไม่มีค่าใช้จ่าย หรือให้ร้านจัดส่ง +${LOCAL_DELIVERY_FEE}฿/เที่ยว (${DELIVERY_HOURS_LABEL})`}
         </p>
       </div>
 
       {/* 2 · day */}
       <div>
-        <p className="text-sm font-semibold text-ink mb-2">{isProv ? 'อยากได้ของวันไหนคะ?' : 'รับวันไหนดี?'}</p>
+        <p className="text-sm font-semibold text-ink mb-2">{isProv ? 'วันที่ต้องการรับพัสดุ' : 'วันที่รับกล้อง'}</p>
         <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1" role="group" aria-label="เลือกวัน">
           {strip.map((d) => (
             <StripCell
@@ -394,7 +394,7 @@ export default function AvailabilitySection() {
 
       {/* 3 · length */}
       <div>
-        <p className="text-sm font-semibold text-ink mb-2">เช่ากี่วัน?</p>
+        <p className="text-sm font-semibold text-ink mb-2">ระยะเวลาเช่า</p>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="ระยะเวลา">
           {basic.map((h) => (
             <DurChip key={h} label={durLabel(h)} on={hours === h} onClick={() => { setHours(h); setMoreDur(false) }} />
@@ -418,7 +418,7 @@ export default function AvailabilitySection() {
           </div>
         )}
         <p className="text-xs text-ink/55 mt-1.5">
-          {isProv ? `ขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน นับจากวันที่ได้รับของค่ะ` : 'นับ 24 ชม. จากเวลาที่รับจริงค่ะ'}
+          {isProv ? `ขั้นต่ำ ${MIN_PROVINCIAL_DURATION_HOURS / 24} วัน นับจากวันที่ได้รับพัสดุ` : 'นับ 24 ชั่วโมงจากเวลาที่รับกล้องจริง'}
         </p>
       </div>
 
@@ -447,31 +447,31 @@ export default function AvailabilitySection() {
                 aria-label="เวลารับ"
               >
                 {hourOpts.map((h) => (
-                  <option key={h} value={h}>{pad(h)}:00{h < OPEN_FROM || h > OPEN_TO ? ' (มารับเองที่ร้าน)' : ''}</option>
+                  <option key={h} value={h}>{pad(h)}:00{h < OPEN_FROM || h > OPEN_TO ? ' (รับที่ร้านเท่านั้น)' : ''}</option>
                 ))}
               </select>
             </label>
             {!showOther && (
               <button onClick={() => setOtherHours(true)} className="min-h-9 text-xs text-ink/60 underline underline-offset-2">
-                เวลาอื่น (มารับเองที่ร้าน)
+                เวลาอื่น (รับที่ร้านเท่านั้น)
               </button>
             )}
           </div>
         )}
-        {outsideHours && <p className="text-xs text-ink/55 mt-1">นอก {DELIVERY_HOURS_LABEL} ร้านไม่ได้ไปส่ง — มารับหรือคืนเองที่ร้านนะคะ</p>}
-        {pastToday && <p className="text-xs text-ink/55 mt-1">วันนี้ใกล้หมดเวลาแล้ว เลือกวันอื่นได้เลยค่ะ</p>}
+        {outsideHours && <p className="text-xs text-ink/55 mt-1">นอก {DELIVERY_HOURS_LABEL} ไม่มีบริการส่งถึงที่ — กรุณารับหรือคืนกล้องที่ร้าน</p>}
+        {pastToday && <p className="text-xs text-ink/55 mt-1">วันนี้ใกล้หมดเวลาให้บริการ กรุณาเลือกวันอื่น</p>}
       </div>
 
       {/* results */}
       <div className="min-h-[14rem]">
         {failed ? (
           <div className="rounded-xl bg-cream p-4 text-sm text-ink/70">
-            ตอนนี้เปิดคิวไม่ได้ ไปหน้าจองได้เลย ระบบเช็กให้ตอนเลือกวันค่ะ
+            ไม่สามารถโหลดข้อมูลคิวได้ในขณะนี้ กรุณาตรวจสอบคิวที่หน้าจอง
             <Link href="/book?from=home" className="mt-2 flex items-center gap-1 text-pink-700 font-medium">ไปหน้าจอง <ArrowRight size={14} /></Link>
           </div>
         ) : !q ? (
           <div className="space-y-2" aria-live="polite">
-            <p className="text-xs text-ink/50">กำลังเช็กคิวให้นะคะ…</p>
+            <p className="text-xs text-ink/50">กำลังตรวจสอบคิว…</p>
             {[0, 1, 2].map((i) => <div key={i} className="h-[4.75rem] rounded-xl bg-cream" />)}
           </div>
         ) : (
@@ -482,10 +482,10 @@ export default function AvailabilitySection() {
               </button>
             )}
             {okList.length > 0 && model === 'all' && (
-              <p className="text-xs text-ink/55 mb-2">ไม่แน่ใจรุ่น? ทุกรุ่นโทน Y2K เหมือนกัน ต่างกันที่สีตัวกล้องค่ะ</p>
+              <p className="text-xs text-ink/55 mb-2">แต่ละรุ่นมีความคมชัด การซูม และระบบกันสั่นแตกต่างกัน ดูภาพตัวอย่างได้ด้านล่าง หรือสอบถามร้านเพื่อช่วยเลือกรุ่น</p>
             )}
             {okList.length === 0 && fullList.length > 0 && (
-              <p className="text-sm text-ink/70 mb-2">ช่วงนี้กล้องออกหมดแล้วค่ะ 🙏 ลองวันใกล้ๆ หรือให้เราหาวันว่างให้</p>
+              <p className="text-sm text-ink/70 mb-2">ช่วงเวลานี้กล้องไม่ว่างทุกรุ่น กรุณาเลือกวันอื่น หรือใช้ปุ่มค้นหาวันว่าง</p>
             )}
             <ul className="space-y-2">
               {okList.map(({ c, price }) => (
@@ -503,7 +503,7 @@ export default function AvailabilitySection() {
             </ul>
             {unknownList.length > 0 && (
               <div className="mt-2 rounded-xl bg-cream p-3 text-xs text-ink/65">
-                ไกลเกินที่ดูได้ กดจองได้เลย ระบบจะเช็กให้อีกทีค่ะ
+                ช่วงเวลานี้เกินระยะที่แสดงคิวได้ ระบบจะตรวจสอบคิวอีกครั้งเมื่อทำการจอง
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {unknownList.map(({ c }) => (
                     <Link key={c.id} href={bookHref(c.id)} className="min-h-9 rounded-full px-3 border border-pink-700/30 text-pink-700 flex items-center">
@@ -518,7 +518,7 @@ export default function AvailabilitySection() {
               <div className="mt-3">
                 {okList.length > 0 && (
                   <button onClick={() => setFullOpen((v) => !v)} aria-expanded={fullOpen} className="min-h-9 text-xs text-ink/60">
-                    {model === 'all' ? 'รุ่นอื่นไม่ว่างช่วงนี้' : 'ไม่ว่างช่วงนี้'} · {fullOpen ? 'ซ่อน' : 'ดูวันว่าง ›'}
+                    {model === 'all' ? 'รุ่นที่ไม่ว่างในช่วงนี้' : 'ไม่ว่างในช่วงนี้'} · {fullOpen ? 'ซ่อน' : 'ดูวันที่ว่าง ›'}
                   </button>
                 )}
                 {(fullOpen || okList.length === 0) && (
@@ -528,7 +528,7 @@ export default function AvailabilitySection() {
                         <span className="truncate">{c.shortName}</span>
                         {again ? (
                           <button onClick={() => goTo(again)} className="min-h-9 text-pink-700 font-medium shrink-0">
-                            ว่างอีกที {dayLabel(again)}{isProv ? '' : ` ${timeLabel(again)}`} · ใช้เวลานี้ ›
+                            ว่างอีกครั้ง {dayLabel(again)}{isProv ? '' : ` ${timeLabel(again)}`} · เลือกเวลานี้ ›
                           </button>
                         ) : (
                           <span className="shrink-0">ไม่ว่างใน {DAYS_SHOWN} วันที่ดูได้</span>
@@ -536,7 +536,7 @@ export default function AvailabilitySection() {
                       </p>
                     ))}
                     <div className="pt-2">
-                      <p className="text-xs text-ink/60 mb-1.5">อยากรอคิวรุ่นนี้? ทักร้านได้เลย (LINE จะพิมพ์ข้อความให้)</p>
+                      <p className="text-xs text-ink/60 mb-1.5">ต้องการรอคิวรุ่นที่ไม่ว่าง ติดต่อร้านได้ทาง LINE หรือ IG</p>
                       <div className="grid grid-cols-2 gap-2">
                         <a
                           href={`${LINE_OA_MESSAGE}${encodeURIComponent(waitText)}`}
@@ -544,7 +544,7 @@ export default function AvailabilitySection() {
                           rel="noreferrer"
                           className="min-h-11 rounded-xl border border-[#06C755]/40 text-[#05A647] text-sm font-medium flex items-center justify-center gap-1.5"
                         >
-                          <MessageCircle size={16} /> ทัก LINE
+                          <MessageCircle size={16} /> ติดต่อทาง LINE
                         </a>
                         <a
                           href={IG_DM}
@@ -553,10 +553,10 @@ export default function AvailabilitySection() {
                           onClick={() => { navigator.clipboard?.writeText(waitText).then(() => setIgCopied(true)).catch(() => {}) }}
                           className="min-h-11 rounded-xl border border-pink-900/20 text-pink-700 text-sm font-medium flex items-center justify-center gap-1.5"
                         >
-                          <Instagram size={16} /> ทัก IG
+                          <Instagram size={16} /> ติดต่อทาง IG
                         </a>
                       </div>
-                      {igCopied && <p className="text-[11px] text-ink/50 mt-1.5">คัดลอกข้อความให้แล้ว วางในแชท IG ได้เลยค่ะ</p>}
+                      {igCopied && <p className="text-[11px] text-ink/50 mt-1.5">คัดลอกข้อความแล้ว สามารถวางในแชท IG ได้ทันที</p>}
                     </div>
                   </div>
                 )}
@@ -567,8 +567,9 @@ export default function AvailabilitySection() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-ink/55 border-t border-pink-900/[0.08] pt-3">
-        จองต้องใช้: บัตรประชาชน + โปรไฟล์ IG/FB · จ่ายเต็ม ไม่มีมัดจำ · ในกระเป๋ามี{INCLUDED_ACCESSORIES.join(' ')}
-        <span className="block text-ink/40 mt-0.5">คิวอัปเดตทุก ~2 นาที ระบบเช็กซ้ำอีกครั้งตอนจองค่ะ</span>
+        เอกสารที่ใช้ในการจอง: รูปบัตรประชาชน (ปิดเลขบัตรได้) และภาพหน้าจอโปรไฟล์ IG/FB · ชำระค่าเช่าเต็มจำนวน ไม่มีมัดจำ
+        <span className="block mt-0.5">ในกระเป๋ามี {INCLUDED_ACCESSORIES.join(' · ')}</span>
+        <span className="block text-ink/40 mt-0.5">ข้อมูลคิวอาจล่าช้ากว่าความจริงเล็กน้อย ระบบจะตรวจสอบอีกครั้งเมื่อทำการจอง</span>
       </p>
 
       {/* detailed tools */}
@@ -638,7 +639,7 @@ export default function AvailabilitySection() {
                   onClick={() => setShowStarts((v) => !v)}
                   className="w-full min-h-11 rounded-xl border border-pink-900/15 text-sm text-ink/80 flex items-center justify-center gap-1.5"
                 >
-                  <Search size={15} /> หาวันที่ว่างให้หน่อย ({model === 'all' ? 'รุ่นไหนก็ได้' : shortName(model)} · {durLabel(hours)})
+                  <Search size={15} /> ค้นหาวันที่ว่าง ({model === 'all' ? 'ทุกรุ่น' : shortName(model)} · {durLabel(hours)})
                 </button>
                 {showStarts && (
                   suggestions.length ? (
@@ -650,7 +651,7 @@ export default function AvailabilitySection() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-ink/60">ไม่เจอวันว่างสำหรับ {durLabel(hours)} ใน {DAYS_SHOWN} วันข้างหน้า — ลองลดจำนวนวันหรือทักร้านนะคะ</p>
+                    <p className="mt-2 text-xs text-ink/60">ไม่พบวันว่างสำหรับ {durLabel(hours)} ใน {DAYS_SHOWN} วันข้างหน้า — กรุณาลดจำนวนวัน หรือสอบถามร้าน</p>
                   )
                 )}
               </div>
@@ -705,7 +706,7 @@ const CELL: Record<Status | 'loading' | 'blank', string> = {
   full: 'bg-white text-ink/35 ring-1 ring-inset ring-ink/5',
   unknown: 'bg-white text-ink/50 ring-1 ring-inset ring-pink-900/10',
 }
-const STATUS_TEXT: Record<Status, string> = { free: 'ว่างทั้งวัน', partial: 'ว่างบางเวลา', full: 'เต็มแล้ว', unknown: 'ยังเปิดดูไม่ได้' }
+const STATUS_TEXT: Record<Status, string> = { free: 'ว่างทั้งวัน', partial: 'ว่างบางเวลา', full: 'เต็มแล้ว', unknown: 'ยังไม่เปิดคิว' }
 
 const DayCell = memo(function DayCell({ d, label, num, status, loaded, selected, disabled, onPick }: {
   d: number
@@ -764,7 +765,7 @@ const ResultRow = memo(function ResultRow({ name, image, colorways, price, prov,
         </p>
         <p className="text-xs text-ink/70 tabular-nums mt-0.5">
           <b className="text-ink">฿{price.toLocaleString('th-TH')}</b>
-          {prov ? ' รวมค่าส่งขาไปแล้ว' : <> ค่าเช่า · <span className="text-ink/55">รับเองฟรี / ส่งถึงที่ +{LOCAL_DELIVERY_FEE}฿ ต่อเที่ยว</span></>}
+          {prov ? ' รวมค่าส่งขาไปแล้ว' : <> ค่าเช่า · <span className="text-ink/55">รับที่ร้านไม่มีค่าใช้จ่าย / ส่งถึงที่ +{LOCAL_DELIVERY_FEE}฿ ต่อเที่ยว</span></>}
         </p>
       </div>
       <Link href={href} className="min-h-11 shrink-0 rounded-xl bg-pink-700 text-cream text-sm font-medium px-3 flex items-center">
