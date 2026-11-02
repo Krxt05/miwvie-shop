@@ -248,13 +248,13 @@ export default function Home() {
       <section className="px-4 sm:px-6 pt-4 sm:pt-10 pb-12 sm:pb-24 max-w-6xl mx-auto">
         <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-x-10 lg:gap-y-6 items-start">
           {/* Visual: photo + a second print + the camera that took it (the owner's
-              favourite part of the old hero — kept as it was; shorter on phones) */}
+              favourite part of the old hero — kept exactly as it was, on every screen size) */}
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 pb-4 md:pb-6">
-            <div className="relative mx-auto w-full max-md:aspect-[5/3] md:max-w-[400px] lg:max-w-[440px] md:aspect-[4/5]">
-              <div className="absolute inset-y-0 right-0 w-full md:w-[78%] rounded-[1.75rem] md:rounded-b-none md:rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
-                <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, (min-width:768px) 320px, 92vw" className="object-cover max-md:object-[50%_40%]" />
+            <div className="relative mx-auto w-full max-w-[400px] lg:max-w-[440px] aspect-[4/5]">
+              <div className="absolute inset-y-0 right-0 w-[78%] rounded-t-full overflow-hidden shadow-[0_30px_60px_-20px_rgba(69,18,31,0.45)] ring-1 ring-pink-900/10">
+                <Image src="/mood/ixy30s-3.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill priority sizes="(min-width:1024px) 360px, 80vw" className="object-cover" />
               </div>
-              <div className="hidden md:block absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
+              <div className="absolute left-0 bottom-[14%] w-[42%] bg-white p-1.5 pb-6 rotate-[-6deg] shadow-[0_20px_40px_-12px_rgba(69,18,31,0.4)]">
                 <div className="relative aspect-[3/4]">
                   <Image src="/mood/ixy30s-2.jpg" alt="ภาพถ่ายจากกล้อง IXY 30s" fill sizes="180px" className="object-cover" />
                 </div>
@@ -265,15 +265,15 @@ export default function Home() {
                 alt=""
                 width={522}
                 height={460}
-                className="absolute -bottom-4 md:-bottom-6 right-[-2%] md:right-[-4%] w-[34%] md:w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
+                className="absolute -bottom-6 right-[-4%] w-[46%] h-auto drop-shadow-[0_18px_22px_rgba(46,12,21,0.45)]"
               />
               <div
-                className="absolute top-3 left-3 md:top-[6%] md:left-[4%] w-16 h-16 md:w-24 md:h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
+                className="absolute top-[6%] left-[4%] w-24 h-24 rounded-full flex flex-col items-center justify-center text-pink-900 rotate-[-10deg] shadow-lg"
                 style={{ background: 'radial-gradient(circle at 35% 30%, #EBD39B, #C9A45C 60%, #A07D3B)' }}
               >
-                <span className="text-[8px] md:text-[10px] font-semibold">รีวิวรับ</span>
-                <span className="font-display text-xl md:text-3xl font-bold leading-none">10%</span>
-                <span className="text-[7px] md:text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
+                <span className="text-[10px] font-semibold">รีวิวรับ</span>
+                <span className="font-display text-3xl font-bold leading-none">10%</span>
+                <span className="text-[8px] font-bold tracking-[0.25em] mt-0.5">OFF</span>
               </div>
             </div>
           </div>
