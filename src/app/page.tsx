@@ -90,15 +90,6 @@ const SECTION_LINKS = [
 // Sections sit under a sticky header: 56px bar + 56px chip row on phones, 64px on md+
 const SCROLL_MT = 'scroll-mt-[120px] md:scroll-mt-20'
 
-// One shot per model, in the order the shop wants them seen: 30s → 10s → 930 IS → 510 IS → 200.
-const GALLERY = [
-  { src: '/mood/ixy30s-1.jpg', cam: 'IXY 30s' },
-  { src: '/mood/ixy10s-1.jpg', cam: 'IXY 10s' },
-  { src: '/mood/ixy930is-1.jpg', cam: 'IXY 930 IS' },
-  { src: '/mood/ixy510is-1.jpg', cam: 'IXY 510 IS' },
-  { src: '/mood/ixy200-1.jpg', cam: 'IXY 200' },
-]
-
 const STEPS = [
   { title: 'เลือกวัน แล้วจอง', desc: 'ตรวจสอบคิวว่าง เลือกรุ่นและเวลารับ แล้วกรอกข้อมูลการจอง' },
   { title: 'โอนเต็ม ไม่มีมัดจำ', desc: 'สแกน PromptPay แนบสลิป พร้อมรูปบัตรประชาชน (ปิดเลขได้) + โปรไฟล์ IG/FB' },
@@ -478,35 +469,6 @@ export default function Home() {
             )
           })}
         </ul>
-      </section>
-
-      {/* ───────── Gallery ───────── */}
-      <section className="px-4 sm:px-6 pb-12 sm:pb-24 max-w-6xl mx-auto">
-        <SectionHead
-          eyebrow="Shot on IXY"
-          title="ภาพจากกล้องจริง"
-          aside={
-            <a href={IG_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-pink-700 hover:underline underline-offset-4">
-              ดูเพิ่มใน IG <ArrowUpRight size={14} />
-            </a>
-          }
-        />
-        <div className={`-mx-4 px-4 flex gap-2 sm:gap-3 overflow-x-auto snap-x snap-mandatory md:mx-0 md:px-0 md:grid md:grid-cols-5 md:overflow-visible ${HIDE_SCROLLBAR}`}>
-          {GALLERY.map((g) => (
-            <figure key={g.src} className="group relative snap-start shrink-0 w-[40%] md:w-auto aspect-[3/4] overflow-hidden rounded-xl bg-pink-100">
-              <Image
-                src={g.src}
-                alt={`ภาพถ่ายจาก ${g.cam}`}
-                fill
-                sizes="(min-width:768px) 20vw, 40vw"
-                className="object-cover group-hover:scale-105 transition-transform duration-700"
-              />
-              <figcaption className="absolute bottom-0 inset-x-0 p-2.5 bg-gradient-to-t from-black/50 to-transparent text-white text-xs font-medium">
-                {g.cam}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
       </section>
 
       {/* ───────── How it works ───────── */}

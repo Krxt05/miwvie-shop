@@ -17,8 +17,6 @@ import { FreeMap, PublicQueue, buildFree, fetchPublicQueue, fitsFast, startOfBkk
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const DAYS_SHOWN = 90 // matches PUBLIC_DAYS in Code.gs
-const OPEN_FROM = 10
-const OPEN_TO = 22
 
 type Cell = { status: 'free' | 'partial' | 'full' | 'closed' | 'unknown' | 'past' }
 
@@ -50,27 +48,30 @@ function provCellFor(q: PublicQueue, free: FreeMap, id: string, day: number, tod
   return { status: 'full' }
 }
 
-// One model on one day: free = a 1-day rental can start that day,
-// partial = only a 6-hour one, full = neither (pickups 10:00–22:00).
+// One model on one day, read like the admin queue chart:
+//   free    — a unit is free the whole day (from now, for today)
+//   partial — busy for part of the day, but a 6-hour rental (the shortest)
+//             can still start that day; pickups at any hour, as on /book
+//   full    — neither
 function cellFor(q: PublicQueue, free: FreeMap, id: string, day: number, now: number): Cell {
-  const open = day + OPEN_FROM * HOUR
-  const close = day + OPEN_TO * HOUR
-  if (close < now) return { status: 'past' }
-  if (q.closed.some(([s, e]) => s <= open && e >= close)) return { status: 'closed' }
-  if ((q.closures ?? []).some((c) => c.cam === 'ALL' && c.s <= open && c.e >= close)) return { status: 'closed' }
+  const hours: number[] = []
+  for (let h = 0; h < 24; h++) if (day + h * HOUR >= now) hours.push(day + h * HOUR)
+  if (!hours.length) return { status: 'past' }
+  // Shop shut for every pickup hour left that day
+  const shut = (t: number) =>
+    q.closed.some(([s, e]) => t >= s && t < e) ||
+    (q.closures ?? []).some((c) => c.cam === 'ALL' && t >= c.s && t < c.e)
+  if (hours.every(shut)) return { status: 'closed' }
+  const from = Math.max(day, now)
+  const end = day + DAY
+  if (end <= q.to && (free[id] ?? []).some(([a, b]) => a <= from && b >= end)) return { status: 'free' }
   let unknown = false
-  for (const len of [24, 6]) {
-    for (let h = OPEN_FROM; h <= OPEN_TO; h++) {
-      const s = day + h * HOUR
-      if (s < now) continue
-      const r = fitsFast(q, free, id, 'local', s, s + len * HOUR)
-      if (r === 'free') return { status: len === 24 ? 'free' : 'partial' }
-      if (r === 'unknown') unknown = true
-    }
-    // A 1-day rental that runs past the data can't be judged — don't call it "some hours"
-    if (unknown) return { status: 'unknown' }
+  for (const s of hours) {
+    const r = fitsFast(q, free, id, 'local', s, s + 6 * HOUR)
+    if (r === 'free') return { status: 'partial' }
+    if (r === 'unknown') unknown = true
   }
-  return unknown ? { status: 'unknown' } : { status: 'full' }
+  return { status: unknown || end > q.to ? 'unknown' : 'full' }
 }
 
 export default function QueueHeatmap() {
@@ -219,7 +220,7 @@ export default function QueueHeatmap() {
           <p className="mt-2 text-[11px] text-ink/50">
             {isProv
               ? `ว่าง = เช่า ${MIN_PROVINCIAL_DURATION_HOURS / 24} วันได้`
-              : 'ว่าง = เช่า 1 วันได้ · ว่างบางช่วง = เช่าได้บางช่วงเวลา'}
+              : 'ว่าง = ว่างทั้งวัน · ว่างบางช่วง = ว่างเฉพาะบางช่วงเวลา'}
           </p>
         </>
       )}
