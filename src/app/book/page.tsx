@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -580,9 +580,11 @@ function BookPage() {
     )
 
   // Closures for this model (its own + 'ALL'), in the shape closures.ts takes
-  const closures: Closure[] = closedSlots
+  // (memoised so the calendar below can skip recomputing on unrelated re-renders)
+  const closures: Closure[] = useMemo(() => closedSlots
     .filter((c) => c.cameraId === 'ALL' || c.cameraId === cameraId)
-    .map((c) => ({ cameraId: c.cameraId, start: new Date(c.start).getTime(), end: new Date(c.end).getTime(), mode: c.mode }))
+    .map((c) => ({ cameraId: c.cameraId, start: new Date(c.start).getTime(), end: new Date(c.end).getTime(), mode: c.mode })),
+  [closedSlots, cameraId])
   // '' or why the shop can't hand over / take back at the chosen times
   const selectionClosed = pickupDatetime && returnDatetime && cameraId
     ? handoverError(closures, cameraId, rentalArea ?? 'local', pickupDatetime.getTime(), returnDatetime.getTime())
@@ -610,7 +612,9 @@ function BookPage() {
 
       {/* Glow */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-pink/10 rounded-full blur-[120px]" />
+        {/* A plain gradient, not a blurred circle: a full-screen blur filter
+            is repainted on every step change and is heavy on iPhone Safari. */}
+        <div className="absolute -top-72 -left-72 w-[40rem] h-[40rem] rounded-full bg-[radial-gradient(circle_at_center,rgba(168,71,90,0.10)_0%,transparent_60%)]" />
       </div>
 
       <div className="relative z-10 max-w-2xl mx-auto px-4 py-8">
@@ -665,10 +669,10 @@ function BookPage() {
           <motion.div
             key={step}
             className={stepChangedRef.current ? undefined : 'animate-step-in'}
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, x: 12 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.25 }}
+            exit={{ opacity: 0, x: -12, transition: { duration: 0.1 } }}
+            transition={{ duration: 0.16 }}
           >
             {/* Step 0: Rental area */}
             {step === STEP_AREA && (

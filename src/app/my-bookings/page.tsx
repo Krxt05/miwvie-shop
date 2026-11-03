@@ -79,7 +79,7 @@ export default function MyBookingsPage() {
         {sorted && sorted.length === 0 && (
           <div className="glass rounded-2xl p-6 text-center">
             <p className="text-gray-500 text-sm mb-4">ยังไม่มีการจองในเครื่องนี้</p>
-            <Link href="/book" className="inline-block bg-pink-700 text-cream text-sm font-medium rounded-full px-5 py-2.5">
+            <Link href="/book?from=home" prefetch={false} className="inline-block bg-pink-700 text-cream text-sm font-medium rounded-full px-5 py-2.5">
               จองกล้อง
             </Link>
           </div>

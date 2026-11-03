@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   addDays,
   addMonths,
@@ -58,7 +58,10 @@ export default function HourlyTimeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMonth])
 
-  const relevantSlots = bookedSlots.filter((b) => b.cameraId === cameraId)
+  const relevantSlots = useMemo(
+    () => bookedSlots.filter((b) => b.cameraId === cameraId),
+    [bookedSlots, cameraId],
+  )
 
   function isBooked(day: Date, hour: number): boolean {
     const slotStart = new Date(day)
@@ -117,10 +120,21 @@ export default function HourlyTimeline({
     onSelectPickup(dt)
   }
 
-  const gridStart = startOfWeek(viewMonth)
-  const gridEnd = endOfWeek(endOfMonth(viewMonth))
-  const calendarDays: Date[] = []
-  for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) calendarDays.push(d)
+  const calendarDays = useMemo(() => {
+    const days: Date[] = []
+    const gridEnd = endOfWeek(endOfMonth(viewMonth))
+    for (let d = startOfWeek(viewMonth); d <= gridEnd; d = addDays(d, 1)) days.push(d)
+    return days
+  }, [viewMonth])
+
+  // Each day's status checks 24 hours against every booking — work it out once
+  // per month/booking change, not on every re-render (selecting a day or hour
+  // re-renders the whole calendar, which was slow on phones).
+  const statuses = useMemo(
+    () => calendarDays.map(dayStatus),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [calendarDays, relevantSlots, closures, cameraId, quantity, durationHours],
+  )
 
   const prevMonthDisabled = isSameMonth(viewMonth, today)
 
@@ -156,8 +170,8 @@ export default function HourlyTimeline({
         </div>
 
         <div className="grid grid-cols-7 gap-1">
-          {calendarDays.map((day) => {
-            const status = dayStatus(day)
+          {calendarDays.map((day, i) => {
+            const status = statuses[i]
             const inMonth = isSameMonth(day, viewMonth)
             const selected = !!selectedDay && isSameDay(day, selectedDay)
             const disabled = status === 'past' || status === 'full' || status === 'closed'

@@ -128,7 +128,7 @@ function BookingStatusInner() {
             <p className="text-4xl mb-4">🔍</p>
             <h2 className="text-xl font-bold mb-2">ไม่พบการจอง</h2>
             <p className="text-gray-400 text-sm mb-6">Booking ID: {id}</p>
-            <Button onClick={() => router.push('/book')} variant="primary">
+            <Button onClick={() => router.push('/book?from=home')} variant="primary">
               จองใหม่
             </Button>
           </div>

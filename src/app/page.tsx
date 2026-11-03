@@ -50,6 +50,9 @@ const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
 // froze ~1.3s at a time for the whole booking flow while the camera-card links
 // stayed smooth; with this (plus /book no longer reading the URL while
 // rendering) it's smooth on the owner's iPhone. Keep both.
+// Every link into /book: same URL shape and NO prefetch, exactly like the camera
+// cards (the path that stays smooth on iPhone Safari). A prefetched /book link
+// was the one difference left when the header button got slow again.
 const BOOK_HREF = '/book?from=home'
 
 // 1-day price across the price groups, e.g. "150–190"
@@ -224,6 +227,7 @@ export default function Home() {
             </Link>
             <Link
               href={BOOK_HREF}
+              prefetch={false}
               className="inline-flex items-center gap-1.5 bg-pink-700 text-cream text-sm font-medium rounded-full pl-4 pr-3 py-2 hover:bg-pink-600 transition-colors whitespace-nowrap"
             >
               จองคิว <ArrowRight size={15} />
@@ -617,7 +621,7 @@ export default function Home() {
             <a href="#availability" className="inline-flex items-center min-h-11 bg-cream text-ink font-medium text-sm rounded-xl px-4">
               คิวว่าง
             </a>
-            <Link href={BOOK_HREF} className="inline-flex items-center min-h-11 bg-pink-600 text-cream font-semibold text-sm rounded-xl px-5">
+            <Link href={BOOK_HREF} prefetch={false} className="inline-flex items-center min-h-11 bg-pink-600 text-cream font-semibold text-sm rounded-xl px-5">
               จองเลย
             </Link>
           </div>

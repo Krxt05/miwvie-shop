@@ -207,7 +207,7 @@ export default function QueueHeatmap() {
       {failed ? (
         <p className="mt-3 text-xs text-ink/60">
           ไม่สามารถโหลดข้อมูลคิวได้ในขณะนี้ กรุณาตรวจสอบคิวที่{' '}
-          <Link href="/book?from=home" className="text-pink-700 underline underline-offset-2">หน้าจอง</Link>
+          <Link href="/book?from=home" prefetch={false} className="text-pink-700 underline underline-offset-2">หน้าจอง</Link>
         </p>
       ) : (
         <>
