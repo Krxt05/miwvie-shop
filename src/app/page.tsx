@@ -55,7 +55,7 @@ const MIN_PRICE = Math.min(...Object.values(PRICE_TABLES).map((t) => t.hourly6))
 // was the one difference left when the header button got slow again.
 const BOOK_HREF = '/book?from=home'
 
-// 1-day price across the price groups, e.g. "150–190"
+// 1-day price across the price groups, e.g. "150–220"
 const DAY1 = Object.values(PRICE_TABLES).map((t) => t.day1)
 const DAY1_RANGE = Math.min(...DAY1) === Math.max(...DAY1) ? `${DAY1[0]}` : `${Math.min(...DAY1)}–${Math.max(...DAY1)}`
 
@@ -72,8 +72,10 @@ const DURATIONS: { label: string; key: keyof PriceTable; days: number }[] = [
   { label: '7 วัน', key: 'day7', days: 7 },
 ]
 
-// One-line summary shown above the (collapsed) price table, e.g. "กลุ่ม A 110–750฿"
-const PRICE_SUMMARY = (['A', 'B'] as const).map((g) => {
+const PRICE_GROUPS = ['A', 'B', 'C'] as const
+
+// One-line summary shown above the (collapsed) price table, e.g. "กลุ่ม A 130–860฿"
+const PRICE_SUMMARY = PRICE_GROUPS.map((g) => {
   const v = DURATIONS.map((d) => PRICE_TABLES[g][d.key])
   return `กลุ่ม ${g} ${Math.min(...v)}–${Math.max(...v)}฿`
 })
@@ -131,7 +133,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: 'เช่าเกิน 7 วันคิดยังไง?',
-    a: `คิดราคา 7 วัน แล้วบวกเพิ่มวันละ ${EXTRA_DAY_RATE.A}฿ (Group A) หรือ ${EXTRA_DAY_RATE.B}฿ (Group B)`,
+    a: `คิดราคา 7 วัน แล้วบวกเพิ่มวันละ ${EXTRA_DAY_RATE.A}฿ (Group A), ${EXTRA_DAY_RATE.B}฿ (Group B) หรือ ${EXTRA_DAY_RATE.C}฿ (Group C)`,
   },
   {
     q: 'รีวิวรับส่วนลดยังไง?',
@@ -398,10 +400,10 @@ export default function Home() {
             <table className="w-full text-right text-sm sm:text-base">
               <thead>
                 <tr className="border-b border-ink/15 align-bottom">
-                  <th className="text-left font-normal text-ink/50 py-2">ระยะเวลา</th>
-                  {(['A', 'B'] as const).map((g) => (
-                    <th key={g} className="py-2 pl-4 font-normal">
-                      <span className="block text-[11px] font-semibold tracking-[0.15em] text-pink-700">GROUP {g}</span>
+                  <th className="text-left font-normal text-ink/50 py-2 whitespace-nowrap">ระยะเวลา</th>
+                  {PRICE_GROUPS.map((g) => (
+                    <th key={g} className="py-2 pl-2 sm:pl-4 font-normal">
+                      <span className="block text-[11px] font-semibold tracking-[0.15em] text-pink-700 whitespace-nowrap">GROUP {g}</span>
                       <span className="block text-xs text-ink/50">
                         {CAMERAS.filter((c) => c.priceGroup === g).map((c) => c.shortName.replace('IXY ', '')).join(' · ')}
                       </span>
@@ -412,19 +414,19 @@ export default function Home() {
               <tbody className="divide-y divide-ink/5">
                 {DURATIONS.map((d) => (
                   <tr key={d.key}>
-                    <td className="text-left py-2.5">{d.label}</td>
-                    {(['A', 'B'] as const).map((g) => (
-                      <td key={g} className="py-2.5 pl-4 whitespace-nowrap">
-                        <span className="text-ink/30 text-xs line-through mr-2">{ORIGINAL_PRICE_TABLES[g][d.key]}</span>
+                    <td className="text-left py-2.5 whitespace-nowrap">{d.label}</td>
+                    {PRICE_GROUPS.map((g) => (
+                      <td key={g} className="py-2.5 pl-2 sm:pl-4 whitespace-nowrap">
+                        <span className="text-ink/30 text-xs line-through mr-1 sm:mr-2">{ORIGINAL_PRICE_TABLES[g][d.key]}</span>
                         <span className="font-semibold">{PRICE_TABLES[g][d.key]}฿</span>
                       </td>
                     ))}
                   </tr>
                 ))}
                 <tr>
-                  <td className="text-left py-2.5 text-ink/60">เกิน 7 วัน</td>
-                  {(['A', 'B'] as const).map((g) => (
-                    <td key={g} className="py-2.5 pl-4 text-ink/60 whitespace-nowrap">+{EXTRA_DAY_RATE[g]}฿/วัน</td>
+                  <td className="text-left py-2.5 text-ink/60 whitespace-nowrap">เกิน 7 วัน</td>
+                  {PRICE_GROUPS.map((g) => (
+                    <td key={g} className="py-2.5 pl-2 sm:pl-4 text-ink/60 whitespace-nowrap">+{EXTRA_DAY_RATE[g]}฿/วัน</td>
                   ))}
                 </tr>
               </tbody>

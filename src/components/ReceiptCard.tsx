@@ -16,6 +16,9 @@ interface Props {
   // The saved booking's amount, when re-showing the slip from the status page.
   // The server priced it, so it wins over recalculating from today's table.
   totalAmount?: number
+  // The saved rental price before discount, for the same reason: a booking made
+  // before a price change must show the price it was booked at.
+  price?: number
   // Hide the screenshot note and the IG / LINE / copy-link buttons.
   showActions?: boolean
   // The booking's secret link token. When present the customer gets a button to
@@ -23,18 +26,18 @@ interface Props {
   accessToken?: string
 }
 
-export default function ReceiptCard({ bookingId, form, totalAmount, showActions = true, accessToken }: Props) {
+export default function ReceiptCard({ bookingId, form, totalAmount, price: storedPrice, showActions = true, accessToken }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [linkCopied, setLinkCopied] = useState(false)
   const receiptRef = useRef<HTMLDivElement>(null)
 
   const isProvincial = form.rentalArea === 'provincial'
   const camera = CAMERAS.find((c) => c.id === form.cameraId)
-  const basePrice = camera ? calcPrice(camera.priceGroup, form.durationHours) : 0
+  const basePrice = valid(storedPrice) ?? (camera ? calcPrice(camera.priceGroup, form.durationHours) : 0)
   const discountAmount = form.discountAmount ?? 0
   const price = basePrice - discountAmount
   const deliveryFee = isProvincial ? PROVINCIAL_SHIPPING_FEE : calcDeliveryFee(form.pickupType, form.returnType)
-  const total = totalAmount ?? price + deliveryFee
+  const total = valid(totalAmount) ?? price + deliveryFee
   const dateFmt = isProvincial ? 'd MMM yy' : 'd MMM yy HH:mm'
 
   // qrcode is imported statically: the lazy chunk it used to come from could
@@ -265,4 +268,9 @@ function AddressRow({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-gray-700 whitespace-pre-wrap break-words">{value}</span>
     </div>
   )
+}
+
+// A stored amount we can trust (old rows may be blank → NaN)
+function valid(n: number | undefined): number | undefined {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : undefined
 }

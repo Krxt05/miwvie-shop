@@ -114,6 +114,8 @@ function BookPage() {
   const [discountError, setDiscountError] = useState('')
   const [bookingId, setBookingId] = useState('')
   const [accessToken, setAccessToken] = useState('')
+  // What the server actually charged, for the slip's QR (see ReceiptCard)
+  const [charged, setCharged] = useState<{ price?: number; totalAmount?: number }>({})
   const [imageUploadFailed, setImageUploadFailed] = useState(false)
   // Queue load state per camera, so a slow or failed read for one model can't
   // show up as "loading"/"failed" after the customer has switched to another.
@@ -496,9 +498,10 @@ function BookPage() {
         discountCode: discountStatus === 'valid' ? discountCode.trim().toUpperCase() : '',
         discountAmount: discountStatus === 'valid' ? discountAmount : 0,
       }
-      const { bookingId: id, accessToken: token } = await createBooking(form)
+      const { bookingId: id, accessToken: token, price: chargedPrice, totalAmount: chargedTotal } = await createBooking(form)
       setBookingId(id)
       setAccessToken(token)
+      setCharged({ price: chargedPrice, totalAmount: chargedTotal })
       setStep(STEP_RECEIPT)
       // Keep it in "ประวัติการจอง", and put the booking's own link in the address
       // bar so a bookmark, refresh or the browser history leads back to it.
@@ -1448,6 +1451,8 @@ function BookPage() {
                 <ReceiptCard
                   bookingId={bookingId}
                   accessToken={accessToken}
+                  price={charged.price}
+                  totalAmount={charged.totalAmount}
                   form={{
                     cameraId: cameraId!,
                     rentalArea,

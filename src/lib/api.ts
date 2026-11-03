@@ -191,7 +191,8 @@ export async function getAllCamerasAvailability(
   return data.cameras ?? {}
 }
 
-export interface CreatedBooking { bookingId: string; accessToken: string; replayed?: boolean }
+// price / totalAmount: what the server charged (absent from older servers)
+export interface CreatedBooking { bookingId: string; accessToken: string; replayed?: boolean; price?: number; totalAmount?: number }
 
 export async function createBooking(form: BookingFormData): Promise<CreatedBooking> {
   // Money is no longer sent. The server recomputes price, delivery fee and the

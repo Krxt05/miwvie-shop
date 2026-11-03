@@ -2,17 +2,19 @@ import { Camera, CameraId, PriceGroup, PriceTable } from '@/types'
 export type { PriceTable }
 
 export const PRICE_TABLES: Record<PriceGroup, PriceTable> = {
-  A: { hourly6: 110, day1: 190, day2: 340, day3: 490, day4: 560, day5: 640, day6: 700, day7: 750 },
-  B: { hourly6: 100, day1: 150, day2: 260, day3: 370, day4: 440, day5: 520, day6: 600, day7: 670 },
+  A: { hourly6: 130, day1: 220, day2: 390, day3: 560, day4: 640, day5: 730, day6: 800, day7: 860 },
+  B: { hourly6: 110, day1: 190, day2: 340, day3: 490, day4: 560, day5: 640, day6: 700, day7: 750 },
+  C: { hourly6: 100, day1: 150, day2: 260, day3: 370, day4: 440, day5: 520, day6: 600, day7: 670 },
 }
 
 export const ORIGINAL_PRICE_TABLES: Record<PriceGroup, PriceTable> = {
-  A: { hourly6: 149, day1: 249, day2: 449, day3: 649, day4: 750, day5: 849, day6: 930, day7: 999 },
-  B: { hourly6: 129, day1: 199, day2: 349, day3: 499, day4: 600, day5: 699, day6: 799, day7: 899 },
+  A: { hourly6: 179, day1: 299, day2: 529, day3: 749, day4: 849, day5: 979, day6: 1069, day7: 1149 },
+  B: { hourly6: 149, day1: 249, day2: 449, day3: 649, day4: 750, day5: 849, day6: 930, day7: 999 },
+  C: { hourly6: 129, day1: 199, day2: 349, day3: 499, day4: 600, day5: 699, day6: 799, day7: 899 },
 }
 
 // Beyond 7 days, each extra day is charged flat on top of the 7-day price
-export const EXTRA_DAY_RATE: Record<PriceGroup, number> = { A: 100, B: 90 }
+export const EXTRA_DAY_RATE: Record<PriceGroup, number> = { A: 120, B: 100, C: 90 }
 
 export const CAMERAS: Camera[] = [
   {
@@ -43,7 +45,7 @@ export const CAMERAS: Camera[] = [
     shortName: 'IXY 930 IS',
     image: '/cameras/ixy930is-new.png',
     moodImages: ['/mood/ixy930is-1.jpg', '/mood/ixy930is-2.jpg', '/mood/ixy930is-3.jpg'],
-    priceGroup: 'A',
+    priceGroup: 'B',
     color: '#b45309',
     quantity: 2,
     colorways: [{ name: 'ฟ้า', hex: '#9fd3df' }, { name: 'แชมเปญ', hex: '#c9a45c' }],
@@ -54,7 +56,7 @@ export const CAMERAS: Camera[] = [
     shortName: 'IXY 510 IS',
     image: '/cameras/ixy510is-new.png',
     moodImages: ['/mood/ixy510is-1.jpg', '/mood/ixy510is-2.jpg', '/mood/ixy510is-3.jpg'],
-    priceGroup: 'A',
+    priceGroup: 'B',
     color: '#a8a29e',
     quantity: 1,
     colorways: [{ name: 'เงิน', hex: '#c8c8c8' }],
@@ -65,7 +67,7 @@ export const CAMERAS: Camera[] = [
     shortName: 'IXY 200',
     image: '/cameras/ixy200-new.png',
     moodImages: ['/mood/ixy200-1.jpg', '/mood/ixy200-2.jpg', '/mood/ixy200-3.jpg'],
-    priceGroup: 'B',
+    priceGroup: 'C',
     color: '#dc2626',
     quantity: 1,
     colorways: [{ name: 'แดง', hex: '#b3122a' }],

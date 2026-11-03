@@ -58,12 +58,13 @@ const CAMERA_QUANTITY = {
 // before submitting, but it is never the source of truth: the server recomputes
 // every figure it stores. Keep these tables in lock-step with cameras.ts.
 const PRICE_TABLES = {
-  A: { hourly6: 110, day1: 190, day2: 340, day3: 490, day4: 560, day5: 640, day6: 700, day7: 750 },
-  B: { hourly6: 100, day1: 150, day2: 260, day3: 370, day4: 440, day5: 520, day6: 600, day7: 670 },
+  A: { hourly6: 130, day1: 220, day2: 390, day3: 560, day4: 640, day5: 730, day6: 800, day7: 860 },
+  B: { hourly6: 110, day1: 190, day2: 340, day3: 490, day4: 560, day5: 640, day6: 700, day7: 750 },
+  C: { hourly6: 100, day1: 150, day2: 260, day3: 370, day4: 440, day5: 520, day6: 600, day7: 670 },
 }
-const EXTRA_DAY_RATE = { A: 100, B: 90 }
+const EXTRA_DAY_RATE = { A: 120, B: 100, C: 90 }
 const CAMERA_GROUP = {
-  IXY10s: 'A', IXY30s: 'A', IXY930IS: 'A', IXY510IS: 'A', IXY200: 'B',
+  IXY10s: 'A', IXY30s: 'A', IXY930IS: 'B', IXY510IS: 'B', IXY200: 'C',
 }
 const PROVINCIAL_SHIPPING_FEE = 50
 const LOCAL_DELIVERY_FEE = 20
@@ -856,6 +857,8 @@ function createBooking(data) {
           success: true,
           bookingId: existing.bookingId,
           accessToken: existing.accessToken,
+          price: existing.price,
+          totalAmount: existing.totalAmount,
           replayed: true,
         }
       }
@@ -995,7 +998,8 @@ function createBooking(data) {
     totalAmount: totalAmount,
   }), discountAmount)
 
-  return { success: true, bookingId: bookingId, accessToken: accessToken }
+  // The slip's QR uses these, so the customer always pays the server's figure
+  return { success: true, bookingId: bookingId, accessToken: accessToken, price: quote.price, totalAmount: totalAmount }
 }
 
 // Looks up a previous booking written under the same idempotency key.
@@ -1003,6 +1007,8 @@ function findBookingByRequestKey(sheet, header, requestKey) {
   const iKey = header.indexOf('request_key')
   const iId = header.indexOf('booking_id')
   const iToken = header.indexOf('access_token')
+  const iPrice = header.indexOf('price')
+  const iTotal = header.indexOf('total_amount')
   if (iKey < 0 || sheet.getLastRow() < 2) return null
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues()
@@ -1011,6 +1017,8 @@ function findBookingByRequestKey(sheet, header, requestKey) {
       return {
         bookingId: String(rows[i][iId]),
         accessToken: iToken >= 0 ? String(rows[i][iToken] || '') : '',
+        price: iPrice >= 0 && rows[i][iPrice] !== '' ? Number(rows[i][iPrice]) : undefined,
+        totalAmount: iTotal >= 0 && rows[i][iTotal] !== '' ? Number(rows[i][iTotal]) : undefined,
       }
     }
   }

@@ -2,7 +2,7 @@
 export type ContactChannel = 'ig' | 'line'
 
 export type CameraId = 'IXY10s' | 'IXY30s' | 'IXY930IS' | 'IXY510IS' | 'IXY200'
-export type PriceGroup = 'A' | 'B'
+export type PriceGroup = 'A' | 'B' | 'C'
 
 export interface PriceTable {
   hourly6: number

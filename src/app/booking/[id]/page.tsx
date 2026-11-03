@@ -175,6 +175,8 @@ function BookingStatusInner() {
                 bookingId={booking.bookingId}
                 accessToken={limited ? undefined : token}
                 totalAmount={Number(booking.totalAmount)}
+                // The status-only view (no token) doesn't get the price: 0 means unknown
+                price={!limited && Number(booking.price) > 0 ? Number(booking.price) : undefined}
                 form={{
                   ...booking,
                   pickupDatetime: new Date(String(booking.pickupDatetime)),
