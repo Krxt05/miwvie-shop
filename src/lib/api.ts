@@ -312,8 +312,24 @@ export async function validateDiscountCode(code: string): Promise<{ valid: boole
   return data
 }
 
-export async function generateDiscountCode(bookingId: string, pin: string): Promise<{ code?: string; error?: string }> {
-  return post({ action: 'generateDiscountCode', bookingId, pin })
+// A fresh review code, not tied to any booking
+export async function generateDiscountCode(pin: string): Promise<{ code?: string; error?: string }> {
+  return post({ action: 'generateDiscountCode', pin })
+}
+
+export interface DiscountCodeRow {
+  code: string
+  source: string // booking it was issued for, or 'manual'
+  createdAt: string
+  usedBy: string // booking that used it
+  usedAt: string
+  status: string // active | used | expired
+}
+
+export async function listDiscountCodes(pin: string): Promise<DiscountCodeRow[]> {
+  const data = await post({ action: 'listDiscountCodes', pin })
+  if (data.error) throw adminError(data)
+  return data.codes ?? []
 }
 
 // `expectedStatus` is what this phone believes the booking is now; the server

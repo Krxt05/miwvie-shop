@@ -1,9 +1,9 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Lock, RefreshCw, LogOut, Sun, ListChecks, CalendarDays, BarChart3, CalendarSearch } from 'lucide-react'
+import { Lock, RefreshCw, LogOut, Sun, ListChecks, CalendarDays, BarChart3, CalendarSearch, Gift } from 'lucide-react'
 import {
-  getAdminBookings, getAdminVersion, updateBookingStatus, generateDiscountCode, updateAdminNotes,
+  getAdminBookings, getAdminVersion, updateBookingStatus, updateAdminNotes,
   listBlockedSlots, BlockedSlot,
 } from '@/lib/api'
 import { Booking, BookingStatus } from '@/types'
@@ -16,6 +16,7 @@ import BookingsTab, { BookingFilters, DEFAULT_FILTERS } from '@/components/admin
 import QueueTab from '@/components/admin/QueueTab'
 import RevenueTab from '@/components/admin/RevenueTab'
 import AvailabilitySheet from '@/components/admin/AvailabilitySheet'
+import ReviewCodeSheet from '@/components/admin/ReviewCodeSheet'
 
 const PIN_KEY = 'miwvie_admin_pin'
 // How often an open admin tab asks "did anything change?" (a cheap version read)
@@ -64,10 +65,9 @@ function AdminApp() {
   const [filters, setFilters] = useState<BookingFilters>(DEFAULT_FILTERS)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
-  const [codeLoading, setCodeLoading] = useState<string | null>(null)
-  const [discountCodes, setDiscountCodes] = useState<Record<string, string>>({})
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const [showAvailability, setShowAvailability] = useState(false)
+  const [showCode, setShowCode] = useState(false)
 
   const pinRef = useRef('')
   pinRef.current = pin
@@ -237,20 +237,6 @@ function AdminApp() {
     if (ok) await runStatus(b, 'cancelled', false)
   }, [confirm, runStatus])
 
-  const generateCode = useCallback(async (bookingId: string) => {
-    setCodeLoading(bookingId)
-    writeSeq.current++
-    try {
-      const res = await generateDiscountCode(bookingId, pinRef.current)
-      if (res.code) setDiscountCodes((prev) => ({ ...prev, [bookingId]: res.code! }))
-      else toast(res.error || 'ออกโค้ดไม่สำเร็จ', 'error')
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'ออกโค้ดไม่สำเร็จ', 'error')
-    } finally {
-      setCodeLoading(null)
-    }
-  }, [toast])
-
   const saveNotes = useCallback(async (bookingId: string, notes: string) => {
     writeSeq.current++
     try {
@@ -270,13 +256,10 @@ function AdminApp() {
 
   const actions: AdminActions = useMemo(() => ({
     isBusy: (id: string) => busyIds.has(id),
-    codeLoading,
-    discountCodes,
     setStatus,
     cancel,
-    generateCode,
     saveNotes,
-  }), [busyIds, codeLoading, discountCodes, setStatus, cancel, generateCode, saveNotes])
+  }), [busyIds, setStatus, cancel, saveNotes])
 
   const onToggle = useCallback((id: string) => setExpanded((cur) => (cur === id ? null : id)), [])
   // From the queue chart: show that one booking, expanded, in the bookings tab
@@ -351,6 +334,13 @@ function AdminApp() {
               aria-label="เช็คคิวว่าง"
             >
               <CalendarSearch size={18} /> <span className="hidden sm:inline">เช็คคิวว่าง</span><span className="sm:hidden">คิวว่าง</span>
+            </button>
+            <button
+              onClick={() => setShowCode(true)}
+              className="h-11 px-3 rounded-xl glass flex items-center gap-1.5 text-sm font-medium text-pink"
+              aria-label="โค้ดส่วนลด"
+            >
+              <Gift size={18} /> <span className="hidden sm:inline">โค้ดส่วนลด</span><span className="sm:hidden">โค้ด</span>
             </button>
             <button onClick={refresh} className="w-11 h-11 rounded-xl glass flex items-center justify-center" aria-label="รีเฟรช" title="รีเฟรช">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
@@ -453,6 +443,7 @@ function AdminApp() {
         })}
       </nav>
 
+      {showCode && <ReviewCodeSheet pin={pin} bookings={bookings} onClose={() => setShowCode(false)} />}
       {showAvailability && (
         <AvailabilitySheet bookings={bookings} blockedSlots={blockedSlots} onClose={() => setShowAvailability(false)} />
       )}

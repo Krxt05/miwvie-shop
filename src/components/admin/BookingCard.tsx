@@ -3,7 +3,7 @@ import { memo, ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ChevronDown, ChevronUp, ExternalLink, CheckCircle, Package, RotateCcw,
-  XCircle, Gift, Copy, Check, StickyNote, AlertTriangle, MessageCircle, Phone, MapPin, Ban, X,
+  XCircle, Copy, Check, StickyNote, AlertTriangle, MessageCircle, Phone, MapPin, Ban, X,
 } from 'lucide-react'
 import { Booking, BookingStatus } from '@/types'
 import { CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
@@ -20,12 +20,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export interface AdminActions {
   isBusy: (bookingId: string) => boolean
-  codeLoading: string | null
-  discountCodes: Record<string, string>
   // The booking as this phone sees it — its status is sent as expectedStatus
   setStatus: (b: Booking, next: BookingStatus, opts?: { skipConfirm?: boolean }) => void
   cancel: (b: Booking) => void
-  generateCode: (bookingId: string) => void
   saveNotes: (bookingId: string, notes: string) => Promise<boolean>
 }
 
@@ -91,10 +88,6 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
   const notHandedOver = isNotHandedOver(b)
   const busy = actions.isBusy(b.bookingId)
   const steps = forwardSteps(b)
-  // The review code issued for this booking. Not b.discountCode — that's the
-  // code the customer *used* when booking, and sending it back would be wrong.
-  // Pressing "ออกโค้ด" again just returns the same active code from the server.
-  const existingCode = actions.discountCodes[b.bookingId] || ''
   const ownTag = String(b.adminNotes || '').includes(BLACKLIST_TAG)
   // Without ID/IG the forward button asks for them instead; confirming anyway
   // is still possible from the expanded card, on purpose.
@@ -287,15 +280,6 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
             </p>
           )}
 
-          {b.bookingStatus === 'returned' && (
-            <ReviewCode
-              bookingId={b.bookingId}
-              code={existingCode}
-              loading={actions.codeLoading === b.bookingId}
-              onGenerate={() => actions.generateCode(b.bookingId)}
-            />
-          )}
-
           {/* Less common moves, kept away from the main button */}
           <div className="border-t border-pink-100 pt-3 flex flex-wrap gap-x-4 gap-y-1">
             <TextAction
@@ -323,7 +307,7 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
 
       {/* Rendered on <body>, not inside the card: a faded (done) card made the
           sheet see-through, and the card's stacking put it under the tab bar. */}
-      {sheet && createPortal(<MessageSheet b={b} reviewCode={existingCode} onClose={() => setSheet(false)} />, document.body)}
+      {sheet && createPortal(<MessageSheet b={b} onClose={() => setSheet(false)} />, document.body)}
     </div>
   )
 }
@@ -361,10 +345,10 @@ function LinkChip({ href, children }: { href: string; children: ReactNode }) {
 }
 
 // Copy-ready chat messages, picked from a sheet so the card stays short
-function MessageSheet({ b, reviewCode, onClose }: { b: Booking; reviewCode: string; onClose: () => void }) {
+function MessageSheet({ b, onClose }: { b: Booking; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null)
   const [manual, setManual] = useState<string | null>(null)
-  const templates = messageTemplates(b, reviewCode || undefined)
+  const templates = messageTemplates(b)
   const handle = String(b.customerIG || '').trim().replace(/^@/, '')
   const igLink = b.contactChannel === 'ig' && /^[A-Za-z0-9._]+$/.test(handle) ? `https://ig.me/m/${handle}` : ''
 
@@ -501,43 +485,6 @@ function NotesEditor({ b, onSave }: { b: Booking; onSave: AdminActions['saveNote
             บันทึกโน้ต
           </Button>
         </div>
-      )}
-    </div>
-  )
-}
-
-function ReviewCode({ bookingId, code, loading, onGenerate }: { bookingId: string; code: string; loading: boolean; onGenerate: () => void }) {
-  const [copied, setCopied] = useState(false)
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Clipboard can be blocked (http, iframe) — the code is on screen anyway.
-    }
-  }
-
-  return (
-    <div className="border-t border-pink-100 pt-4" data-booking={bookingId}>
-      <p className="text-gray-600 text-xs mb-2 flex items-center gap-1">
-        <Gift size={11} /> โค้ดส่วนลด 10% สำหรับรีวิว
-      </p>
-      {code ? (
-        <div className="flex items-center gap-2">
-          <div className="flex-1 rounded-lg px-3 py-2 text-center font-mono font-bold text-base tracking-widest bg-pink-50 border border-pink-200 text-gold">
-            {code}
-          </div>
-          <button onClick={copy} className="w-11 h-11 rounded-lg glass flex items-center justify-center" title="คัดลอกโค้ด" aria-label="คัดลอกโค้ด">
-            {copied ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} className="text-gold" />}
-          </button>
-        </div>
-      ) : (
-        <Button size="sm" variant="outline" loading={loading} onClick={onGenerate}>
-          <Gift size={14} />
-          ออกโค้ดส่วนลด
-        </Button>
       )}
     </div>
   )

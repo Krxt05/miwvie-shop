@@ -417,6 +417,7 @@ function handlePostAction(body) {
     case 'listBlockedSlots':     return listBlockedSlots(body.pin)
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
+    case 'listDiscountCodes':    return listDiscountCodes(body.pin)
     case 'getDayQueue':          return getDayQueue(body.pin, body.date)
     case 'getUpcomingQueue':     return getUpcomingQueue(body.pin)
     case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text, body.texts)
@@ -1729,8 +1730,9 @@ function generateDiscountCode(bookingId, pin) {
 }
 
 function issueDiscountCode_(sheet, bookingId) {
-  // Return existing active code for this booking
-  if (sheet.getLastRow() > 1) {
+  // Return existing active code for this booking. Without a booking (the
+  // admin's standalone "ออกโค้ด" button) every press is a new code.
+  if (bookingId && sheet.getLastRow() > 1) {
     const data = sheet.getDataRange().getValues()
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === bookingId && data[i][5] === 'active') {
@@ -1747,8 +1749,24 @@ function issueDiscountCode_(sheet, bookingId) {
     for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
   } while (codeExists(sheet, code))
 
-  sheet.appendRow([code, bookingId, new Date().toISOString(), '', '', 'active'])
+  sheet.appendRow([code, bookingId || 'manual', new Date().toISOString(), '', '', 'active'])
   return { code }
+}
+
+// Code history for the admin, newest first
+function listDiscountCodes(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  const sheet = getSpreadsheet().getSheetByName('discount_codes')
+  if (!sheet || sheet.getLastRow() < 2) return { codes: [] }
+  const iso = (v) => (v instanceof Date ? v.toISOString() : String(v || ''))
+  const codes = sheet.getDataRange().getValues().slice(1)
+    .filter((r) => r[0])
+    .map((r) => ({
+      code: String(r[0]), source: String(r[1] || ''), createdAt: iso(r[2]),
+      usedBy: String(r[3] || ''), usedAt: iso(r[4]), status: String(r[5] || ''),
+    }))
+  return { codes: codes.reverse().slice(0, 300) }
 }
 
 function codeExists(sheet, code) {

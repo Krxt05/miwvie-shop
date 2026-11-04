@@ -35,6 +35,7 @@ const POST_ACTIONS = new Set([
   'listBlockedSlots',
   'deleteBlockedSlot',
   'generateDiscountCode',
+  'listDiscountCodes',
   'getCorruptRows',
   'listConfigKeys',
   'listTriggers',

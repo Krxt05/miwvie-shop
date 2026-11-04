@@ -7,6 +7,22 @@ import { baht } from '@/lib/revenue'
 
 export interface MessageTemplate { id: string; label: string; text: string }
 
+export const REVIEW_REQUEST = [
+  'ขอบคุณที่ใช้บริการค่ะ🙏💕',
+  'ตัวเองสามารถส่งรูปรีวิว 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
+].join('\n')
+
+// Sent with the code once the customer's review photos are in
+export function reviewThanks(code: string): string {
+  return [
+    'ขอบคุณสำหรับรีวิวค่ะ 🥰💕',
+    'ทางร้านขออนุญาตนำภาพไปโปรโมตร้านนะคะ 📸✨',
+    '',
+    `🎁 Code ส่วนลด 10%: ${code}`,
+    'สามารถนำไปกรอกในการจองครั้งถัดไปได้เลยน้า 🙏',
+  ].join('\n')
+}
+
 const camName = (b: Booking) => CAMERAS.find((c) => c.id === b.cameraId)?.shortName ?? b.cameraId
 
 export function bookingLink(b: Booking): string {
@@ -15,7 +31,7 @@ export function bookingLink(b: Booking): string {
   return `${window.location.origin}/booking/${encodeURIComponent(b.bookingId)}${token}`
 }
 
-export function messageTemplates(b: Booking, reviewCode?: string): MessageTemplate[] {
+export function messageTemplates(b: Booking): MessageTemplate[] {
   const prov = b.rentalArea === 'provincial'
   const cam = camName(b)
   const due = dueBack(b)
@@ -67,29 +83,7 @@ export function messageTemplates(b: Booking, reviewCode?: string): MessageTempla
     })
   }
 
-  out.push({
-    id: 'review',
-    label: 'ขอรีวิว',
-    text: [
-      'ขอบคุณที่ใช้บริการค่ะ🙏💕',
-      'ตัวเองสามารถส่งรูปรีวิว 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
-    ].join('\n'),
-  })
-
-  // After the customer sent their review photos and the code was issued
-  if (reviewCode) {
-    out.push({
-      id: 'thanks',
-      label: 'ขอบคุณหลังรีวิว',
-      text: [
-        'ขอบคุณสำหรับรีวิวค่ะ 🥰💕',
-        'ทางร้านขออนุญาตนำภาพไปโปรโมตร้านนะคะ 📸✨',
-        '',
-        `🎁 Code ส่วนลด 10%: ${reviewCode}`,
-        'สามารถนำไปกรอกในการจองครั้งถัดไปได้เลยน้า 🙏',
-      ].join('\n'),
-    })
-  }
+  out.push({ id: 'review', label: 'ขอรีวิว', text: REVIEW_REQUEST })
 
   // The message most likely needed now goes first; ones that no longer fit
   // the booking's stage are dropped.
@@ -103,6 +97,6 @@ const ORDER: Record<string, string[]> = {
   pending: ['docs', 'paid', 'ready', 'remind'],
   confirmed: ['ready', 'paid', 'remind', 'returnAddr', 'docs'],
   active: ['overdue', 'remind', 'returnAddr', 'review'],
-  returned: ['thanks', 'review'],
+  returned: ['review'],
   cancelled: [],
 }
