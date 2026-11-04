@@ -9,7 +9,7 @@ export interface MessageTemplate { id: string; label: string; text: string }
 
 export const REVIEW_REQUEST = [
   'ขอบคุณที่ใช้บริการค่ะ🙏💕',
-  'ตัวเองสามารถส่งรูปรีวิว 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
+  'ตัวเองสามารถส่งรูปรีวิวอย่างน้อย 4 รูป 📸 เพื่อรับ Code ส่วนลด 10% สำหรับเช่าครั้งต่อไปได้น้า ✨',
 ].join('\n')
 
 // Sent with the code once the customer's review photos are in

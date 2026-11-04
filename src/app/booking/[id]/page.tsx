@@ -36,7 +36,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; label: string; co
     icon: RotateCcw,
     label: 'คืนแล้ว',
     color: 'text-gray-400',
-    sub: 'การเช่าเสร็จสิ้น ขอบคุณที่ใช้บริการ · ส่งรูปรีวิว 4 รูปขึ้นไปมาที่ IG หรือ LINE ร้าน รับโค้ดลด 10% ครั้งหน้า',
+    sub: 'การเช่าเสร็จสิ้น ขอบคุณที่ใช้บริการ · ส่งรูปรีวิวอย่างน้อย 4 รูปมาที่ IG หรือ LINE ร้าน รับโค้ดลด 10% ครั้งหน้า',
   },
   cancelled: {
     icon: XCircle,
