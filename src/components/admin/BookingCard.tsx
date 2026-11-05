@@ -8,7 +8,7 @@ import {
 import { Booking, BookingStatus } from '@/types'
 import { CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import {
-  BLACKLIST_TAG, CustomerInfo, STATUS_LABEL, dayLabel, dayTimeLabel, dayYearLabel, dueBack, hasDocs,
+  BLACKLIST_TAG, CustomerInfo, STATUS_LABEL, dayLabel, dayTimeLabel, dayYearLabel, hasDocs,
   isNotHandedOver, isOverdue, timeOf,
 } from '@/lib/admin'
 import { baht } from '@/lib/revenue'
@@ -186,15 +186,10 @@ function BookingCard({ b, expanded, onToggle, actions, customer, context }: Prop
               value={isProv ? dayYearLabel(b.pickupDatetime) : `${dayYearLabel(b.pickupDatetime)} ${timeOf(b.pickupDatetime)}`}
             />
             <Detail
-              label={isProv ? 'ส่งคืน (ก่อน 12:00)' : 'คืน (ตามจอง)'}
+              label={isProv ? 'ส่งคืน (ก่อน 12:00)' : 'คืน'}
               value={isProv ? dayYearLabel(b.returnDatetime) : `${dayYearLabel(b.returnDatetime)} ${timeOf(b.returnDatetime)}`}
             />
-            {b.pickedUpAt && (
-              <>
-                <Detail label="ส่งกล้องจริง" value={dayTimeLabel(b.pickedUpAt)} />
-                {!isProv && <Detail label="ควรคืน (24 ชม. จากรับจริง)" value={dayTimeLabel(dueBack(b))} />}
-              </>
-            )}
+            {b.pickedUpAt && <Detail label="กดส่งกล้องเมื่อ" value={dayTimeLabel(b.pickedUpAt)} />}
             {isProv ? (
               <>
                 <Detail

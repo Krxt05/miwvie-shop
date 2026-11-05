@@ -17,7 +17,7 @@ const BOOKING_HEADERS = [
   'access_token', 'request_key',
   'contact_channel',
   'paid_at', // when the admin pressed "ยืนยันรับเงิน" — the day money reached the account
-  'picked_up_at', // when the admin pressed "ส่งกล้องแล้ว" — the 24h rental clock starts here
+  'picked_up_at', // when the admin pressed "ส่งกล้องแล้ว" — a record only; the return time stays as booked
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for

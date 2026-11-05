@@ -47,16 +47,10 @@ export function isOpen(b: Booking): boolean {
   return b.bookingStatus === 'pending' || b.bookingStatus === 'confirmed' || b.bookingStatus === 'active'
 }
 
-// When the camera should be back. A local rental runs 24h blocks from the
-// moment it was actually handed over (shop rule), so once "ส่งกล้องแล้ว"
-// recorded that moment, count from it; otherwise use the booked return.
+// When the camera should be back: the return time fixed at booking, whatever
+// moment "ส่งกล้องแล้ว" was pressed (pickedUpAt is kept only as a record).
 export function dueBack(b: Booking): number {
-  const booked = new Date(String(b.returnDatetime)).getTime()
-  const picked = b.pickedUpAt ? new Date(b.pickedUpAt).getTime() : NaN
-  if (b.rentalArea !== 'provincial' && !isNaN(picked) && Number(b.durationHours) > 0) {
-    return picked + Number(b.durationHours) * 60 * 60 * 1000
-  }
-  return booked
+  return new Date(String(b.returnDatetime)).getTime()
 }
 
 // Out with the customer past the return time and not marked back yet. Only a

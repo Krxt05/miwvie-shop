@@ -85,6 +85,6 @@ export interface Booking extends BookingFormData {
   adminNotes: string
   returnedAt?: string  // ISO — set when admin marks the booking returned
   paidAt?: string      // ISO — first time admin confirmed payment; empty on rows before Nov 2026
-  pickedUpAt?: string  // ISO — when admin pressed "ส่งกล้องแล้ว"; the 24h clock starts here
+  pickedUpAt?: string  // ISO — when admin pressed "ส่งกล้องแล้ว" (record only; due time stays as booked)
   accessToken?: string // unlocks the full booking page; admin-only, empty on very old rows
 }
