@@ -36,7 +36,7 @@ export const CAMERAS: Camera[] = [
     moodImages: ['/mood/ixy30s-1.jpg', '/mood/ixy30s-2.jpg', '/mood/ixy30s-3.jpg'],
     priceGroup: 'A',
     color: '#6b7280',
-    quantity: 2,
+    quantity: 3,
     colorways: [{ name: 'ดำ', hex: '#1f1f1f' }, { name: 'เงิน', hex: '#c8c8c8' }],
   },
   {

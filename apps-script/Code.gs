@@ -48,7 +48,7 @@ const CAMERA_NAMES = {
 
 const CAMERA_QUANTITY = {
   IXY10s: 1,
-  IXY30s: 2,
+  IXY30s: 3,
   IXY930IS: 2,
   IXY510IS: 1,
   IXY200: 1
