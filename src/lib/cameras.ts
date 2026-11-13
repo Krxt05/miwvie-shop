@@ -173,6 +173,8 @@ export const RETURN_SHIPPING_ADDRESS = [
   '268 หอพักเมธาเรสสิเด้นท์ 3 ม.3 ต.ท่าขอนยาง อ.กันทรวิชัย จ.มหาสารคาม 44150',
 ].join('\n')
 export const PROMPTPAY_NUMBER = '0981016683'
+// Account holder name shown under the QR so customers can check it in their bank app before paying
+export const PROMPTPAY_NAME = 'กุลธิดา นวลอาสา'
 // The shop's LINE OA (@005vsebr) — customers can send slips here as well as IG
 export const LINE_URL = 'https://lin.ee/s6beUHc'
 

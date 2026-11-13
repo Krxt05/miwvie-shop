@@ -6,7 +6,7 @@ import { th } from 'date-fns/locale'
 import { ExternalLink, Camera, Link2, Check, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import { BookingFormData } from '@/types'
-import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL, LINE_URL } from '@/lib/cameras'
+import { CAMERAS, calcPrice, calcDeliveryFee, PROMPTPAY_NUMBER, PROMPTPAY_NAME, PROVINCIAL_SHIPPING_FEE, PROVINCIAL_SHIP_LEAD_DAYS, SHOP_MAP_URL, LINE_URL } from '@/lib/cameras'
 import { generatePromptPayPayload } from '@/lib/promptpay'
 import Button from './ui/Button'
 
@@ -46,7 +46,7 @@ export default function ReceiptCard({ bookingId, form, totalAmount, price: store
   useEffect(() => {
     let cancelled = false
     QRCode.toDataURL(generatePromptPayPayload(PROMPTPAY_NUMBER, total), {
-      width: 160,
+      width: 192,
       margin: 1,
       color: { dark: '#1a0818', light: '#ffffff' },
     })
@@ -169,20 +169,31 @@ export default function ReceiptCard({ bookingId, form, totalAmount, price: store
           </div>
         </div>
 
-        {/* QR Code — compact horizontal layout; the number shows even before the QR */}
+        {/* PromptPay QR — compact horizontal layout (same size as before), with a
+            Thai QR Payment header on the QR so customers recognise it as a
+            bank-app QR. The number and name show even before the QR renders. */}
         <div className="px-6 py-4 flex items-center gap-4 border-b border-dashed border-pink-200">
-          <div className="bg-white rounded-xl p-2 shrink-0 border border-pink-100">
-            {qrDataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrDataUrl} alt="PromptPay QR" className="w-24 h-24" />
-            ) : (
-              <div className="w-24 h-24" />
-            )}
+          <div className="shrink-0 rounded-xl overflow-hidden bg-white border border-[#113566]/25">
+            <div className="bg-[#113566] text-white text-center py-0.5 text-[8px] font-bold tracking-[0.12em]">
+              THAI QR
+            </div>
+            <div className="p-1.5">
+              {qrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qrDataUrl} alt="QR พร้อมเพย์" className="w-24 h-24" />
+              ) : (
+                <div className="w-24 h-24" />
+              )}
+            </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5 min-w-0">
             <p className="text-gray-500 text-[11px]">สแกนจ่ายผ่าน</p>
-            <p className="text-gray-800 font-bold text-sm">PromptPay</p>
-            <p className="text-pink text-sm font-semibold">{PROMPTPAY_NUMBER}</p>
+            <p className="text-base font-extrabold leading-tight tracking-tight" aria-label="PromptPay พร้อมเพย์">
+              <span className="text-[#113566]">Prompt</span><span className="text-[#1C9AD6]">Pay</span>
+              <span className="text-gray-400 text-[10px] font-normal ml-1">พร้อมเพย์</span>
+            </p>
+            <p className="text-pink text-sm font-semibold">{formatPromptPay(PROMPTPAY_NUMBER)}</p>
+            <p className="text-gray-700 text-xs">ชื่อบัญชี {PROMPTPAY_NAME}</p>
             <p className="text-gray-400 text-[10px]">ยอด {total.toLocaleString()} บาท</p>
           </div>
         </div>
@@ -273,4 +284,11 @@ function AddressRow({ label, value }: { label: string; value: string }) {
 // A stored amount we can trust (old rows may be blank → NaN)
 function valid(n: number | undefined): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : undefined
+}
+
+// 0981016683 -> 098-101-6683 so the number is easy to type into a bank app.
+// Anything that isn't a 10-digit phone number (e.g. a national ID) is shown as is.
+function formatPromptPay(n: string) {
+  const d = n.replace(/\D/g, '')
+  return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : n
 }
