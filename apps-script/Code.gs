@@ -18,6 +18,7 @@ const BOOKING_HEADERS = [
   'contact_channel',
   'paid_at', // when the admin pressed "ยืนยันรับเงิน" — the day money reached the account
   'picked_up_at', // when the admin pressed "ส่งกล้องแล้ว" — a record only; the return time stays as booked
+  'line_user_id', // customer's LINE userId, set by linkLine after Vercel verified their LIFF login
 ]
 
 // Provincial rentals ship both ways, so the physical unit is off the market for
@@ -368,6 +369,7 @@ function handleGet(p) {
 const DATA_WRITE_ACTIONS = {
   createBooking: 1, attachImages: 1, updateBookingStatus: 1, updateAdminNotes: 1,
   deleteBooking: 1, blockDates: 1, deleteBlockedSlot: 1, generateDiscountCode: 1,
+  linkLine: 1,
 }
 
 function handlePost(body) {
@@ -422,6 +424,7 @@ function handlePostAction(body) {
     case 'getUpcomingQueue':     return getUpcomingQueue(body.pin)
     case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text, body.texts)
     case 'linePush':             return linePush(body.pin, body.text, body.texts)
+    case 'linkLine':             return linkLine(body.pin, body.bookingId, body.token, body.lineUserId, body.siteUrl)
     case 'bootstrapAdminPin':    return bootstrapAdminPin(body.newPin)
     case 'setAdminPin':          return setAdminPin(body.pin, body.newPin)
     case 'getCorruptRows':       return getCorruptRows(body.pin)
@@ -1395,6 +1398,92 @@ function linePush(pin, text, texts) {
   const authErr = checkPin(pin)
   if (authErr) return authErr
   return lineSend('push', null, texts && texts.length ? texts : [text])
+}
+
+// ── ผูกการจองกับ LINE ของลูกค้า (LIFF) ───────────────────────
+// Called only by Vercel /api/line/link, after it verified the customer's LIFF
+// login with LINE — so the userId here is LINE's word, not the browser's. The
+// PIN proves the caller is Vercel; the booking's access_token proves the caller
+// made this booking (booking ids are sequential and easy to guess).
+function linkLine(pin, bookingId, token, lineUserId, siteUrl) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  if (!/^U[0-9a-f]{32}$/.test(String(lineUserId || ''))) return { error: 'bad lineUserId' }
+  if (!bookingId || !token) return { error: 'missing booking' }
+
+  const found = withScriptLock_(function () {
+    const sheet = getSpreadsheet().getSheetByName('bookings')
+    if (!sheet || sheet.getLastRow() < 2) return { error: 'not found' }
+    ensureColumns(sheet, BOOKING_HEADERS)
+    const data = sheet.getDataRange().getValues()
+    const h = data[0]
+    const iId = h.indexOf('booking_id')
+    const iToken = h.indexOf('access_token')
+    const iLine = h.indexOf('line_user_id')
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(bookingId)) continue
+      const stored = String(data[i][iToken] || '')
+      if (!stored || stored !== String(token)) return { error: 'not found' }
+      const current = String(data[i][iLine] || '')
+      if (current === lineUserId) return { row: data[i], h: h, already: true }
+      if (current) return { error: 'linked to another LINE' }
+      sheet.getRange(i + 1, iLine + 1).setValue(lineUserId)
+      return { row: data[i], h: h, already: false }
+    }
+    return { error: 'not found' }
+  })
+  if (found.error) return found
+  // Linking twice (a retry) must not message the customer twice
+  if (found.already) return { success: true, sent: false }
+
+  const sent = lineSendTo_(lineUserId, [customerReceivedText_(found.row, found.h, siteUrl, token)])
+  return { success: true, sent: sent.ok === true }
+}
+
+function lineSendTo_(userId, texts) {
+  const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_TOKEN')
+  if (!token) return { error: 'no LINE_CHANNEL_TOKEN' }
+  try {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      payload: JSON.stringify({
+        to: userId,
+        messages: texts.slice(0, 5).map(function (t) { return { type: 'text', text: String(t).slice(0, 4999) } }),
+      }),
+      muteHttpExceptions: true,
+    })
+    Logger.log('lineSendTo ' + res.getResponseCode() + ': ' + res.getContentText())
+    return { ok: res.getResponseCode() === 200 }
+  } catch (e) {
+    Logger.log('lineSendTo error: ' + e.message)
+    return { ok: false }
+  }
+}
+
+// What the customer gets in LINE right after booking
+function customerReceivedText_(row, h, siteUrl, token) {
+  const get = function (k) { const i = h.indexOf(k); return i >= 0 ? row[i] : '' }
+  const id = String(get('booking_id'))
+  const prov = get('rental_area') === 'provincial'
+  const fmt = prov ? 'dd/MM/yyyy' : 'dd/MM HH:mm'
+  const pickup = Utilities.formatDate(new Date(get('pickup_datetime')), 'Asia/Bangkok', fmt)
+  const ret = Utilities.formatDate(new Date(get('return_datetime')), 'Asia/Bangkok', fmt)
+  const cam = CAMERA_NAMES[get('camera_id')] || get('camera_id')
+  const base = /^https:\/\/[^\s]+$/.test(String(siteUrl || '')) ? String(siteUrl).replace(/\/$/, '') : LINE_BOT_BASE
+  const link = base + '/booking/' + encodeURIComponent(id) + '?t=' + encodeURIComponent(token)
+  return [
+    'MIWVIE SHOP ได้รับการจองแล้วค่ะ 📸',
+    'รหัสจอง: ' + id,
+    '📷 ' + cam,
+    prov ? '📅 พัสดุถึงมือ: ' + pickup + ' → ส่งคืน: ' + ret : '📅 รับ: ' + pickup + ' → คืน: ' + ret,
+    '💰 ยอดชำระ: ' + get('total_amount') + ' ฿',
+    '',
+    'ใบจอง / QR ชำระเงิน 👇',
+    link,
+    '',
+    'ร้านจะแจ้งยืนยันคิวในแชทนี้นะคะ 🙏',
+  ].join('\n')
 }
 
 // ── แจ้งเตือนคิวพรุ่งนี้อัตโนมัติ ทุกวันเวลา ~16:00 ──────────

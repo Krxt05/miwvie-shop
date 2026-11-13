@@ -19,6 +19,7 @@ import dynamic from 'next/dynamic'
 const ReceiptCard = dynamic(() => import('@/components/ReceiptCard'), { ssr: false })
 import Button from '@/components/ui/Button'
 import { rememberBooking, bookingPath } from '@/lib/myBookings'
+import { useLiffProfile, linkBookingToLine, inLineContext, addFriendUrl, type LinkResult } from '@/lib/liff'
 import { Closure, handoverError } from '@/lib/closures'
 import { BookedSlot, ClosedSlot, BookingFormData, CameraId, ContactChannel, DeliveryType, RentalArea } from '@/types'
 
@@ -130,6 +131,10 @@ function BookPage() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
   const [customDays, setCustomDays] = useState(8)
   const [prefilled, setPrefilled] = useState(false)
+  // Opened from LINE: the LINE name fills the contact field, and the finished
+  // booking is linked so the OA can message the customer.
+  const liffProfile = useLiffProfile()
+  const [lineLink, setLineLink] = useState<'idle' | 'linking' | LinkResult>('idle')
 
   // Returning customer on the same device: fill in what they typed last time.
   useEffect(() => {
@@ -150,6 +155,17 @@ function BookPage() {
     setShippingPostalCode(saved.shippingPostalCode ?? '')
     setPrefilled(true)
   }, [])
+
+  // A remembered IG choice stays; otherwise LINE it is, with their LINE name.
+  const liffName = liffProfile?.name ?? ''
+  useEffect(() => {
+    if (!liffName) return
+    if (contactChannel === 'ig') return
+    if (contactChannel === 'line' && customerIG.trim()) return
+    setContactChannel('line')
+    setCustomerIG(liffName)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liffName])
 
   // Clears only what sits on this step. The delivery address belongs to the
   // earlier pickup/return step, which has already been validated — wiping it
@@ -534,6 +550,13 @@ function BookPage() {
       // receipt and scans the QR. Deliberately not awaited — nothing on screen
       // waits for Drive. If every retry fails, say so on the receipt so the
       // customer can send them over IG instead; the booking itself still stands.
+      if (inLineContext()) {
+        setLineLink('linking')
+        linkBookingToLine(id, token).then(setLineLink)
+      } else {
+        setLineLink('idle')
+      }
+
       setImageUploadFailed(false)
       attachImages(id, token, idCardImage, igProfileImage).then((res) => {
         if (!res.success) setImageUploadFailed(true)
@@ -1446,6 +1469,19 @@ function BookPage() {
                     <strong className="block mb-0.5">การจองของคุณสำเร็จแล้ว</strong>
                     แต่ส่งรูปบัตรประชาชน/โปรไฟล์ IG ไม่สำเร็จ รบกวนส่งรูปมาที่ IG{' '}
                     <span className="font-semibold">@miwvie_shop</span> หรือ LINE ของร้าน พร้อมสลิปได้เลยค่ะ
+                  </div>
+                )}
+                {lineLink !== 'idle' && (
+                  <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
+                    {lineLink === 'linking' && 'กำลังส่งสรุปการจองเข้า LINE…'}
+                    {typeof lineLink === 'object' && lineLink.ok && lineLink.sent && 'ส่งสรุปการจองเข้า LINE ของคุณแล้ว ✅'}
+                    {typeof lineLink === 'object' && lineLink.ok && !lineLink.sent && (
+                      <>
+                        ผูกการจองกับ LINE แล้ว แต่ส่งข้อความไม่ได้ — เพิ่มร้านเป็นเพื่อนเพื่อรับแจ้งเตือน{' '}
+                        <a href={addFriendUrl} className="font-semibold underline" target="_blank" rel="noopener noreferrer">เพิ่มเพื่อน</a>
+                      </>
+                    )}
+                    {typeof lineLink === 'object' && !lineLink.ok && 'ส่งสรุปเข้า LINE ไม่สำเร็จ แต่การจองสำเร็จแล้ว — ใช้ใบจองด้านล่างได้เลยค่ะ'}
                   </div>
                 )}
                 <ReceiptCard
