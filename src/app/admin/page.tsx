@@ -407,6 +407,7 @@ function AdminApp() {
         )}
         {tab === 'revenue' && (
           <RevenueTab
+            pin={pin}
             bookings={bookings}
             blockedSlots={blockedSlots}
             onJumpToPending={() => jumpTo('pending')}

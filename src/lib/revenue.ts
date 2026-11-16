@@ -6,8 +6,8 @@
 //   The provincial shipping fee (50฿) is paid on to the courier, so it is cash
 //   that passes through, not income.
 import { Booking, CameraId } from '@/types'
-import { BlockedSlot } from '@/lib/api'
-import { BATTERY_CHARGE_BUFFER_MS, CAMERAS, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
+import type { BlockedSlot, Expense, ExpenseCategory } from '@/lib/api'
+import { BATTERY_CHARGE_BUFFER_MS, CAMERAS, MARKET_VALUES, PROVINCIAL_SHIP_LEAD_DAYS } from '@/lib/cameras'
 import { bangkokDay, bangkokMonth, customerKey, isPaid } from '@/lib/admin'
 
 const HOUR_MS = 60 * 60 * 1000
@@ -331,4 +331,238 @@ export function revenueCsv(bookings: Booking[], p: Period): string {
   }
   // BOM so Excel opens the Thai text as UTF-8
   return '﻿' + [head, ...rows].map((r) => r.map(esc).join(',')).join('\n')
+}
+
+// ---------- pace: what's earned vs still to come ----------
+
+// Splits the period's money by whether the camera has gone out yet, so a month
+// in progress shows how much is already locked in and where it could end.
+export function pace(bookings: Booking[], p: Period, now = Date.now()) {
+  let done = 0, doneCount = 0, booked = 0, bookedCount = 0, pending = 0, pendingCount = 0
+  for (const b of bookings) {
+    if (b.bookingStatus === 'cancelled' || !inPeriod(b.pickupDatetime, p)) continue
+    const net = netOf(b)
+    if (isPaid(b)) {
+      if (ms(b.pickupDatetime) <= now) { done += net; doneCount++ }
+      else { booked += net; bookedCount++ }
+    } else if (b.bookingStatus === 'pending') {
+      pending += net; pendingCount++
+    }
+  }
+  return {
+    done, doneCount, booked, bookedCount, pending, pendingCount,
+    // Best case if every unpaid booking is confirmed
+    ceiling: done + booked + pending,
+  }
+}
+
+// Paid rentals that start after the period being viewed — money already secured
+// for the months ahead.
+export function bookedAhead(bookings: Booking[], p: Period) {
+  const { end } = periodBounds(p)
+  let total = 0, count = 0
+  for (const b of bookings) {
+    if (!isPaid(b) || ms(b.pickupDatetime) < end) continue
+    total += netOf(b); count++
+  }
+  return { total, count }
+}
+
+// ---------- cash by day (to tick off against the bank app) ----------
+
+export interface CashDay {
+  day: string // yyyy-MM-dd
+  total: number
+  items: { id: string; name: string; amount: number; estimated: boolean }[]
+}
+
+export function cashByDay(bookings: Booking[], p: Period): CashDay[] {
+  const days = new Map<string, CashDay>()
+  for (const b of bookings) {
+    if (b.paymentStatus !== 'confirmed') continue
+    const when = b.paidAt || b.createdAt
+    if (!when || !inPeriod(when, p)) continue
+    const day = bangkokDay(String(when))
+    const d = days.get(day) ?? { day, total: 0, items: [] }
+    const amount = Number(b.totalAmount) || 0
+    d.total += amount
+    d.items.push({ id: b.bookingId, name: b.customerName, amount, estimated: !b.paidAt })
+    days.set(day, d)
+  }
+  return Array.from(days.values()).sort((a, b) => (a.day < b.day ? 1 : -1))
+}
+
+// ---------- rental mix: length, lead time, weekday ----------
+
+const LENGTH_BUCKETS = [
+  { key: '6h', label: '6 ชม.', max: 6 },
+  { key: '1d', label: '1 วัน', max: 24 },
+  { key: '2d', label: '2 วัน', max: 48 },
+  { key: '3d', label: '3 วัน', max: 72 },
+  { key: '4d+', label: '4 วันขึ้นไป', max: Infinity },
+] as const
+
+const WEEKDAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
+
+export function rentalMix(bookings: Booking[], p: Period) {
+  const paidHere = bookings.filter((b) => isPaid(b) && inPeriod(b.pickupDatetime, p))
+  const lengths = LENGTH_BUCKETS.map((x) => ({ key: x.key, label: x.label, count: 0, net: 0 }))
+  const weekdays = WEEKDAYS.map((label) => ({ label, count: 0, net: 0 }))
+  let hours = 0, hoursN = 0, lead = 0, leadN = 0, sameDay = 0
+  for (const b of paidHere) {
+    const start = ms(b.pickupDatetime)
+    const h = (ms(b.returnDatetime) - start) / HOUR_MS
+    const net = netOf(b)
+    if (h > 0) {
+      hours += h; hoursN++
+      // Round to the nearest hour so a 24h59m booking still counts as 1 day
+      const i = LENGTH_BUCKETS.findIndex((x) => Math.round(h) <= x.max)
+      lengths[i].count++; lengths[i].net += net
+    }
+    if (!isNaN(start)) {
+      // Weekday in Bangkok time
+      const wd = new Date(start + 7 * HOUR_MS).getUTCDay()
+      weekdays[wd].count++; weekdays[wd].net += net
+      const created = ms(b.createdAt)
+      if (!isNaN(created) && start >= created) {
+        const days = (start - created) / DAY_MS
+        lead += days; leadN++
+        if (days < 1) sameDay++
+      }
+    }
+  }
+  return {
+    count: paidHere.length,
+    lengths,
+    weekdays,
+    avgDays: hoursN ? hours / hoursN / 24 : null,
+    avgLeadDays: leadN ? lead / leadN : null,
+    sameDayPct: leadN ? Math.round((sameDay / leadN) * 100) : null,
+  }
+}
+
+// ---------- expenses, profit, ROI ----------
+
+
+export const EXPENSE_LABEL: Record<ExpenseCategory, string> = {
+  camera: 'ซื้อกล้อง',
+  gear: 'อุปกรณ์ (เมม/แบต/สาย/กระเป๋า)',
+  repair: 'ซ่อม/บำรุง',
+  travel: 'ค่าเดินทาง/ส่งของ',
+  marketing: 'โฆษณา/การตลาด',
+  other: 'อื่น ๆ',
+}
+
+// A camera purchase is an investment, not a running cost: it's paid back over
+// many months, so it's kept out of monthly profit and measured by ROI instead.
+export const isCapital = (e: Expense) => e.category === 'camera'
+
+const expenseInPeriod = (e: Expense, p: Period) =>
+  p.kind === 'month' ? e.date.slice(0, 7) === p.key : e.date.slice(0, 4) === p.key
+
+export function profit(bookings: Booking[], expenses: Expense[], p: Period) {
+  const m = money(bookings.filter((b) => isPaid(b) && inPeriod(b.pickupDatetime, p)))
+  const income = m.net + m.localFees
+  const here = expenses.filter((e) => expenseInPeriod(e, p))
+  const byCat = new Map<ExpenseCategory, number>()
+  let opex = 0
+  let capex = 0
+  for (const e of here) {
+    if (isCapital(e)) capex += e.amount
+    else opex += e.amount
+    byCat.set(e.category, (byCat.get(e.category) ?? 0) + e.amount)
+  }
+  const operating = income - opex
+  return {
+    income,
+    opex,
+    capex,
+    operating, // กำไรจากการดำเนินงาน
+    margin: income > 0 ? Math.round((operating / income) * 100) : null,
+    afterCapex: operating - capex, // เงินสดเหลือหลังซื้อกล้อง
+    byCat: Array.from(byCat.entries()).map(([cat, amount]) => ({ cat, amount })).sort((a, b) => b.amount - a.amount),
+    items: here.sort((a, b) => (a.date < b.date ? 1 : -1)),
+  }
+}
+
+// Daily rental income in a month, by pickup day.
+export function dailyNet(bookings: Booking[], month: string) {
+  const [y, mo] = month.split('-').map(Number)
+  const n = new Date(Date.UTC(y, mo, 0)).getUTCDate()
+  const days = Array.from({ length: n }, (_, i) => ({ day: `${month}-${String(i + 1).padStart(2, '0')}`, net: 0, count: 0 }))
+  for (const b of bookings) {
+    if (!isPaid(b)) continue
+    const d = bangkokDay(String(b.pickupDatetime))
+    if (d.slice(0, 7) !== month) continue
+    const row = days[Number(d.slice(8, 10)) - 1]
+    row.net += netOf(b)
+    row.count++
+  }
+  return days
+}
+
+export interface RoiRow {
+  id: CameraId | 'ALL'
+  name: string
+  cost: number // purchase + repairs tagged to this model
+  earned: number // lifetime net rental of this model (paid pickups up to now)
+  roiPct: number | null // (earned − cost) / cost
+  paybackPct: number | null // earned / cost, capped visually at 100
+  monthly: number // avg net per month over the last 3 full months
+  monthsLeft: number | null // to break even at that pace
+  market: number // market value of the units still rentable
+}
+
+// What the cameras would fetch if sold now, after knocking `haircut` (0–1) off
+// the market price for a quick second-hand sale. Total return then counts both
+// the rental income so far and the cash the cameras would bring back.
+export function assetReturn(row: RoiRow, haircut: number) {
+  const sale = Math.round(row.market * (1 - haircut))
+  const total = row.earned + sale - row.cost
+  return { sale, total, pct: row.cost > 0 ? Math.round((total / row.cost) * 100) : null }
+}
+
+// Lifetime return on each model's purchase. Only money already earned (pickup
+// has happened) counts, so the payback bar never runs ahead of reality.
+export function roi(bookings: Booking[], expenses: Expense[], now = Date.now()): { rows: RoiRow[]; shop: RoiRow } {
+  const thisMonth = bangkokMonth(now)
+  const last3 = [1, 2, 3].map((i) => shiftMonth(thisMonth, -i))
+  const earnedRows = bookings.filter((b) => isPaid(b) && ms(b.pickupDatetime) <= now)
+
+  const build = (id: CameraId | 'ALL', name: string, cost: number, mine: Booking[]): RoiRow => {
+    const earned = sumNet(mine)
+    // Average over the recent full months the model was actually renting
+    const first = mine.reduce((m, b) => { const k = bangkokMonth(String(b.pickupDatetime)); return k < m ? k : m }, thisMonth)
+    const months = Math.max(1, last3.filter((k) => k >= first).length)
+    const monthly = sumNet(mine.filter((b) => last3.includes(bangkokMonth(String(b.pickupDatetime))))) / months
+    const remaining = cost - earned
+    const market = MARKET_VALUES.filter((u) => id === 'ALL' || u.cameraId === id).reduce((s, u) => s + u.value, 0)
+    return {
+      id, name, cost, earned, monthly, market,
+      roiPct: cost > 0 ? Math.round(((earned - cost) / cost) * 100) : null,
+      paybackPct: cost > 0 ? Math.round((earned / cost) * 100) : null,
+      monthsLeft: cost > 0 && remaining > 0 && monthly > 0 ? Math.ceil(remaining / monthly) : remaining <= 0 && cost > 0 ? 0 : null,
+    }
+  }
+
+  const rows = CAMERAS.map((c) => {
+    const cost = expenses
+      .filter((e) => e.cameraId === c.id && (e.category === 'camera' || e.category === 'repair'))
+      .reduce((s, e) => s + e.amount, 0)
+    return build(c.id, c.shortName, cost, earnedRows.filter((b) => b.cameraId === c.id))
+  })
+
+  // Whole shop: every baht spent against every baht of shop income
+  const totalCost = expenses.reduce((s, e) => s + e.amount, 0)
+  const shopRow = build('ALL', 'ทั้งร้าน', totalCost, earnedRows)
+  const fees = money(earnedRows).localFees
+  const shopEarned = shopRow.earned + fees
+  const shop: RoiRow = {
+    ...shopRow,
+    earned: shopEarned,
+    roiPct: totalCost > 0 ? Math.round(((shopEarned - totalCost) / totalCost) * 100) : null,
+    paybackPct: totalCost > 0 ? Math.round((shopEarned / totalCost) * 100) : null,
+    monthsLeft: totalCost > shopEarned && shopRow.monthly > 0 ? Math.ceil((totalCost - shopEarned) / shopRow.monthly) : totalCost > 0 && totalCost <= shopEarned ? 0 : null,
+  }
+  return { rows, shop }
 }

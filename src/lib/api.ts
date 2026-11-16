@@ -418,3 +418,42 @@ export async function listBlockedSlots(pin: string): Promise<BlockedSlot[]> {
 export async function deleteBlockedSlot(id: string, pin: string): Promise<{ success?: boolean; error?: string }> {
   return post({ action: 'deleteBlockedSlot', id, pin })
 }
+
+// ── Expenses (admin money tab) ───────────────────────────────
+
+export type ExpenseCategory = 'camera' | 'gear' | 'repair' | 'travel' | 'marketing' | 'other'
+
+export interface Expense {
+  id: string
+  date: string // yyyy-MM-dd (Bangkok)
+  category: ExpenseCategory
+  amount: number
+  cameraId: CameraId | ''
+  note: string
+}
+
+export async function listExpenses(pin: string): Promise<Expense[]> {
+  const data = await post({ action: 'listExpenses', pin })
+  if (data.error) throw adminError(data)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.expenses ?? []).map((r: Record<string, any>) => ({
+    id: String(r.id ?? ''),
+    date: String(r.date ?? '').slice(0, 10),
+    category: (String(r.category || 'other') as ExpenseCategory),
+    amount: Number(r.amount) || 0,
+    cameraId: (String(r.camera_id ?? '') as CameraId | ''),
+    note: String(r.note ?? ''),
+  }))
+}
+
+export async function addExpense(
+  pin: string,
+  e: Omit<Expense, 'id'>,
+  requestKey = newRequestKey(),
+): Promise<{ success?: boolean; id?: string; error?: string }> {
+  return post({ action: 'addExpense', pin, requestKey, ...e })
+}
+
+export async function deleteExpense(id: string, pin: string): Promise<{ success?: boolean; error?: string }> {
+  return post({ action: 'deleteExpense', id, pin })
+}

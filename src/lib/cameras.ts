@@ -186,3 +186,18 @@ export const MIN_PROVINCIAL_DURATION_HOURS = 72
 // Earliest a customer can pick as their start day — the shop needs this many
 // days of lead time to ship the unit out before it's due to arrive.
 export const PROVINCIAL_SHIP_LEAD_DAYS = 3
+
+// Rough market value of each rentable unit, for the admin ROI card. Second-hand
+// prices drift — update these (and MARKET_VALUE_AS_OF) when re-checking prices.
+// Broken units (930 IS #3, 910 IS) are left out: worth ~0 until repaired.
+export const MARKET_VALUE_AS_OF = 'ต.ค. 69'
+export const MARKET_VALUES: { cameraId: CameraId; label: string; value: number }[] = [
+  { cameraId: 'IXY30s', label: 'IXY 30S ตัวที่ 1', value: 11000 },
+  { cameraId: 'IXY30s', label: 'IXY 30S ตัวที่ 2', value: 11000 },
+  { cameraId: 'IXY30s', label: 'IXY 30S ตัวที่ 3', value: 11000 },
+  { cameraId: 'IXY10s', label: 'IXY 10S', value: 11000 },
+  { cameraId: 'IXY930IS', label: 'IXY 930IS ตัวที่ 1', value: 8500 },
+  { cameraId: 'IXY930IS', label: 'IXY 930IS ตัวที่ 2', value: 8500 },
+  { cameraId: 'IXY510IS', label: 'IXY 510IS', value: 8500 },
+  { cameraId: 'IXY200', label: 'IXY 200', value: 3500 },
+]

@@ -5,9 +5,11 @@ import { Booking } from '@/types'
 import { BlockedSlot } from '@/lib/api'
 import { bangkokMonth, isPaid } from '@/lib/admin'
 import {
-  Period, baht, cameraRows, cashIn, comparison, inPeriod, insights, money, monthShort,
-  periodLabel, revenueCsv, shiftMonth, shiftPeriod, sumNet,
+  Period, baht, bookedAhead, cameraRows, cashByDay, cashIn, comparison, inPeriod, insights, money, monthShort,
+  pace, periodLabel, rentalMix, revenueCsv, shiftMonth, shiftPeriod, sumNet,
 } from '@/lib/revenue'
+import { dayLabel, weekdayLabel } from '@/lib/admin'
+import { DailyChart, ProfitCard, RoiCard, useExpenses } from '@/components/admin/MoneyCards'
 
 // Utilisation hints (CFO rule of thumb): busy most of the time → a second unit
 // would pay; idle most of the time → price or keep it under review.
@@ -17,16 +19,20 @@ const LOW_UTIL = 20
 const MIN_UTIL_DAYS = 5
 
 interface Props {
+  pin: string
   bookings: Booking[]
   blockedSlots: BlockedSlot[]
   onJumpToPending: () => void
 }
 
-export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: Props) {
+export default function RevenueTab({ pin, bookings, blockedSlots, onJumpToPending }: Props) {
+  const expenses = useExpenses(pin)
   const thisMonth = bangkokMonth(Date.now())
   const [period, setPeriod] = useState<Period>({ kind: 'month', key: thisMonth })
   const [picked, setPicked] = useState<string | null>(null) // trend bar the user tapped
   const [more, setMore] = useState(false)
+  const [showDays, setShowDays] = useState(false)
+  const [openDay, setOpenDay] = useState<string | null>(null)
 
   const isCurrent = period.key === (period.kind === 'month' ? thisMonth : thisMonth.slice(0, 4))
   const label = periodLabel(period)
@@ -55,11 +61,17 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
       pending: { count: pending.length, total: pending.reduce((s, b) => s + (Number(b.totalAmount) || 0), 0) },
       cams: cameraRows(bookings, blockedSlots, period),
       ins: insights(bookings, period),
+      pace: pace(bookings, period),
+      ahead: bookedAhead(bookings, period),
+      days: cashByDay(bookings, period),
+      mix: rentalMix(bookings, period),
       trend,
     }
   }, [bookings, blockedSlots, period])
 
-  const { m, cmp, cash, pending, cams, ins, trend } = data
+  const { m, cmp, cash, pending, cams, ins, trend, pace: pc, ahead, days, mix } = data
+  const paceTotal = Math.max(1, pc.ceiling)
+  const mixMax = Math.max(1, ...mix.weekdays.map((w) => w.count))
   const trendMax = Math.max(1, ...trend.map((t) => t.net))
   const selectedMonth = period.kind === 'month' ? period.key : thisMonth.startsWith(period.key) ? thisMonth : `${period.key}-12`
   const shown = trend.find((t) => t.month === (picked ?? selectedMonth)) ?? trend[trend.length - 1]
@@ -156,6 +168,45 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
         )}
       </div>
 
+      {/* Pace: locked in vs still to come */}
+      {(pc.bookedCount > 0 || pc.pendingCount > 0 || ahead.count > 0) && (
+        <section className="glass rounded-xl p-4">
+          <h3 className="font-bold text-sm mb-3">{isCurrent ? 'คาดการณ์' : 'ภาพรวม'} {periodLabel(period, 'short')}</h3>
+          {pc.ceiling > 0 && (
+            <>
+              <div
+                className="flex h-3 rounded-full overflow-hidden bg-pink-50"
+                role="img"
+                aria-label={`รับกล้องแล้ว ${baht(pc.done)} จองแล้วรอรับ ${baht(pc.booked)} รอยืนยันเงิน ${baht(pc.pending)}`}
+              >
+                <div className="bg-pink" style={{ width: `${(pc.done / paceTotal) * 100}%` }} />
+                <div className="bg-pink-300" style={{ width: `${(pc.booked / paceTotal) * 100}%` }} />
+                <div className="bg-brass-light" style={{ width: `${(pc.pending / paceTotal) * 100}%` }} />
+              </div>
+              <dl className="text-sm space-y-1.5 mt-3">
+                <Line label={<Dot className="bg-pink">รับกล้องไปแล้ว · {pc.doneCount} ครั้ง</Dot>} value={baht(pc.done)} />
+                <Line label={<Dot className="bg-pink-300">จ่ายแล้ว รอรับกล้อง · {pc.bookedCount} ครั้ง</Dot>} value={baht(pc.booked)} />
+                {pc.pendingCount > 0 && (
+                  <Line label={<Dot className="bg-brass-light">รอยืนยันเงิน · {pc.pendingCount} ครั้ง</Dot>} value={baht(pc.pending)} muted />
+                )}
+                <Line
+                  label={pc.pendingCount > 0 ? 'สูงสุดถ้ายืนยันเงินครบ' : `รวมทั้ง${period.kind === 'month' ? 'เดือน' : 'ปี'}`}
+                  value={baht(pc.ceiling)}
+                  strong
+                  rule
+                />
+              </dl>
+            </>
+          )}
+          {ahead.count > 0 && (
+            <p className={`text-xs text-gray-600 flex justify-between gap-3 ${pc.ceiling > 0 ? 'mt-3 pt-3 border-t border-pink-100' : ''}`}>
+              <span>จ่ายแล้ว รับกล้องหลัง{periodLabel(period, 'short')} · {ahead.count} ครั้ง</span>
+              <b className="text-ink whitespace-nowrap">{baht(ahead.total)}</b>
+            </p>
+          )}
+        </section>
+      )}
+
       {pending.count > 0 && (
         <button
           onClick={onJumpToPending}
@@ -184,11 +235,53 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
             <Line label="เงินรับจากลูกค้าทั้งหมด" value={baht(m.totalIn)} strong rule />
           </dl>
           <div className="mt-3 pt-3 border-t border-pink-100 space-y-1 text-xs text-gray-600">
-            <p className="flex justify-between gap-3">
-              <span>เงินโอนเข้าใน {periodLabel(period, 'short')} (ตามวันกดยืนยันรับเงิน · ไว้เทียบกับบัญชีธนาคาร)</span>
-              <span className="text-ink font-semibold whitespace-nowrap">{baht(cash.total)}</span>
-            </p>
-            {cash.estimated > 0 && <p>{cash.estimated} รายการเก่าไม่มีวันยืนยันรับเงิน ใช้วันที่จองแทน</p>}
+            <button
+              onClick={() => setShowDays(!showDays)}
+              aria-expanded={showDays}
+              className="w-full flex justify-between gap-3 text-left"
+            >
+              <span>
+                เงินโอนเข้าใน {periodLabel(period, 'short')} (ตามวันกดยืนยันรับเงิน · ไว้เทียบกับบัญชีธนาคาร)
+                <span className="block text-pink font-medium">{showDays ? 'ซ่อนรายวัน' : 'ดูรายวัน'}</span>
+              </span>
+              <span className="text-ink font-semibold whitespace-nowrap flex items-start gap-1">
+                {baht(cash.total)}
+                <ChevronDown size={14} className={`mt-0.5 transition-transform ${showDays ? 'rotate-180' : ''}`} />
+              </span>
+            </button>
+            {showDays && (
+              <ul className="divide-y divide-pink-100 rounded-lg border border-pink-100 bg-white/60 my-2">
+                {days.length === 0 && <li className="px-3 py-2">ไม่มีเงินเข้าในช่วงนี้</li>}
+                {days.map((d) => (
+                  <li key={d.day}>
+                    <button
+                      onClick={() => setOpenDay(openDay === d.day ? null : d.day)}
+                      aria-expanded={openDay === d.day}
+                      className="w-full flex justify-between gap-3 px-3 py-2 text-left"
+                    >
+                      <span className="text-ink">
+                        {weekdayLabel(`${d.day}T12:00:00+07:00`)} {dayLabel(`${d.day}T12:00:00+07:00`)}
+                        <span className="text-gray-600"> · {d.items.length} รายการ</span>
+                      </span>
+                      <b className="text-ink whitespace-nowrap">{baht(d.total)}</b>
+                    </button>
+                    {openDay === d.day && (
+                      <ul className="px-3 pb-2 space-y-1">
+                        {d.items.map((it) => (
+                          <li key={it.id} className="flex justify-between gap-3 pl-3">
+                            <span className="truncate min-w-0">
+                              {it.id} · {it.name}{it.estimated && ' *'}
+                            </span>
+                            <span className="whitespace-nowrap">{baht(it.amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {cash.estimated > 0 && <p>{showDays && '* '}{cash.estimated} รายการเก่าไม่มีวันยืนยันรับเงิน ใช้วันที่จองแทน</p>}
             {ins.cancelledPaid.count > 0 && (
               <p className="text-red-700">
                 ยกเลิกหลังจ่ายแล้ว {ins.cancelledPaid.count} รายการ · {baht(ins.cancelledPaid.total)} — ไม่นับเป็นรายได้ ตรวจเองว่าคืนเงินแล้วหรือยัง
@@ -198,6 +291,10 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
           </div>
         </section>
       )}
+
+      <ProfitCard bookings={bookings} period={period} data={expenses} />
+
+      {period.kind === 'month' && <DailyChart bookings={bookings} month={period.key} />}
 
       {/* By model */}
       {m.count > 0 && (
@@ -256,6 +353,8 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
           {!showUtil && <p className="text-[11px] text-gray-600 mt-3">% การเช่าจะขึ้นเมื่อผ่านไปอย่างน้อย {MIN_UTIL_DAYS} วัน</p>}
         </section>
       )}
+
+      <RoiCard bookings={bookings} data={expenses} />
 
       {/* Trend */}
       <section className="glass rounded-xl p-4">
@@ -320,7 +419,48 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
               <Line label="ในพื้นที่" value={`${ins.local.count} ครั้ง · ${baht(ins.local.net)}`} />
               <Line label="ต่างจังหวัด" value={`${ins.provincial.count} ครั้ง · ${baht(ins.provincial.net)}`} />
               <Line label="ยกเลิก" value={ins.cancelPct === null ? '-' : `${ins.cancelled} รายการ (${ins.cancelPct}%)`} />
+              <Line label="เช่าเฉลี่ย" value={mix.avgDays === null ? '-' : `${mix.avgDays.toFixed(1)} วัน/ครั้ง`} />
+              <Line
+                label="จองล่วงหน้าเฉลี่ย"
+                value={mix.avgLeadDays === null ? '-' : `${mix.avgLeadDays.toFixed(1)} วัน · จองวันเดียวกัน ${mix.sameDayPct}%`}
+              />
             </dl>
+            {mix.count > 0 && (
+              <div className="border-t border-pink-100 pt-3">
+                <p className="font-semibold text-ink text-xs mb-2">แยกตามระยะเวลาเช่า</p>
+                <dl className="space-y-1.5">
+                  {mix.lengths.filter((x) => x.count > 0).map((x) => (
+                    <Line
+                      key={x.key}
+                      label={`${x.label} · ${Math.round((x.count / mix.count) * 100)}%`}
+                      value={`${x.count} ครั้ง · ${baht(x.net)}`}
+                    />
+                  ))}
+                </dl>
+              </div>
+            )}
+            {mix.count > 0 && (
+              <div className="border-t border-pink-100 pt-3">
+                <p className="font-semibold text-ink text-xs mb-2">วันที่ลูกค้ารับกล้อง</p>
+                <ul className="flex items-end gap-1.5 h-20" aria-label="จำนวนการเช่าตามวันรับกล้อง">
+                  {mix.weekdays.map((w) => (
+                    <li key={w.label} className="flex-1 h-full flex flex-col justify-end items-center gap-1">
+                      <span className="text-[10px] text-gray-600">{w.count || ''}</span>
+                      <span
+                        className="w-full max-w-8 rounded-t bg-pink-400"
+                        style={{ height: `${(w.count / mixMax) * 70}%`, minHeight: w.count ? 2 : 0 }}
+                        aria-label={`${w.label} ${w.count} ครั้ง ${baht(w.net)}`}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-1.5 mt-1 border-t border-gray-300 pt-1" aria-hidden>
+                  {mix.weekdays.map((w) => (
+                    <span key={w.label} className="flex-1 text-center text-[11px] text-gray-600">{w.label}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="text-xs text-gray-600 space-y-1 border-t border-pink-100 pt-3">
               <p className="font-semibold text-ink">วิธีคิดตัวเลข</p>
               <p>• นับตามวันที่ลูกค้ารับกล้อง เฉพาะรายการที่ยืนยันเงินแล้วและไม่ถูกยกเลิก</p>
@@ -328,6 +468,8 @@ export default function RevenueTab({ bookings, blockedSlots, onJumpToPending }: 
               <p>• ถูกเช่า % = ชั่วโมงที่ลูกค้าเช่า ÷ (จำนวนเครื่อง × ชั่วโมงที่ผ่านไปของช่วงนี้)</p>
               <p>• ไม่ว่าง % รวมเวลาส่งพัสดุ ±3 วัน, ชาร์จแบต 1 ชม., ใบจองที่ยังไม่จ่าย และวันที่บล็อกเอง</p>
               <p>• ลูกค้าเก่า = เบอร์โทร (หรือ IG) นี้เคยเช่าและจ่ายแล้วมาก่อน</p>
+              <p>• จองล่วงหน้า = วันรับกล้อง − วันที่ลูกค้ากดจอง</p>
+              <p>• คาดการณ์ = แยกยอดของช่วงนี้ตามว่ารับกล้องไปแล้วหรือยัง ส่วน &quot;รอยืนยันเงิน&quot; ยังไม่นับเป็นรายได้</p>
             </div>
           </div>
         )}
@@ -353,7 +495,16 @@ function Delta({ cmp }: { cmp: ReturnType<typeof comparison> }) {
   )
 }
 
-function Line({ label, value, strong, muted, rule }: { label: string; value: string; strong?: boolean; muted?: boolean; rule?: boolean }) {
+function Dot({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <i className={`inline-block w-2.5 h-2.5 rounded-sm shrink-0 ${className}`} />
+      {children}
+    </span>
+  )
+}
+
+function Line({ label, value, strong, muted, rule }: { label: React.ReactNode; value: string; strong?: boolean; muted?: boolean; rule?: boolean }) {
   return (
     <div className={`flex justify-between gap-3 ${rule ? 'border-t border-pink-100 pt-1.5' : ''}`}>
       <dt className={muted ? 'text-gray-600' : strong ? 'text-ink font-semibold' : 'text-ink'}>{label}</dt>

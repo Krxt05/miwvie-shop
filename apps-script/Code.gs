@@ -37,6 +37,8 @@ const PROVINCIAL_SHIP_LEAD_DAYS = 3
 //   nopickup — takes no units; pickups inside are refused, returns allowed
 const BLOCKED_HEADERS = ['id', 'camera_id', 'start_datetime', 'end_datetime', 'reason', 'created_at', 'quantity', 'request_key', 'mode']
 const BLOCK_MODES = { hold: 1, closed: 1, nopickup: 1 }
+const EXPENSE_HEADERS = ['id', 'date', 'category', 'amount', 'camera_id', 'note', 'created_at', 'request_key']
+const EXPENSE_CATEGORIES = { camera: 1, gear: 1, repair: 1, travel: 1, marketing: 1, other: 1 }
 const DISCOUNT_HEADERS = ['code', 'source_booking_id', 'created_at', 'used_by_booking_id', 'used_at', 'status']
 
 const CAMERA_NAMES = {
@@ -369,7 +371,7 @@ function handleGet(p) {
 const DATA_WRITE_ACTIONS = {
   createBooking: 1, attachImages: 1, updateBookingStatus: 1, updateAdminNotes: 1,
   deleteBooking: 1, blockDates: 1, deleteBlockedSlot: 1, generateDiscountCode: 1,
-  linkLine: 1,
+  linkLine: 1, addExpense: 1, deleteExpense: 1,
 }
 
 function handlePost(body) {
@@ -420,6 +422,9 @@ function handlePostAction(body) {
     case 'deleteBlockedSlot':    return deleteBlockedSlot(body.id, body.pin)
     case 'generateDiscountCode': return generateDiscountCode(body.bookingId, body.pin)
     case 'listDiscountCodes':    return listDiscountCodes(body.pin)
+    case 'listExpenses':         return listExpenses(body.pin)
+    case 'addExpense':           return addExpense(body)
+    case 'deleteExpense':        return deleteExpense(body.id, body.pin)
     case 'getDayQueue':          return getDayQueue(body.pin, body.date)
     case 'getUpcomingQueue':     return getUpcomingQueue(body.pin)
     case 'lineReply':            return lineReply(body.pin, body.replyToken, body.text, body.texts)
@@ -1786,6 +1791,88 @@ function deleteBlockedSlot(id, pin) {
   const sheet = getSpreadsheet().getSheetByName('blocked_slots')
   if (!sheet) return { error: 'Sheet not found' }
 
+  return withScriptLock_(function () {
+    const data = sheet.getDataRange().getValues()
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(id)) {
+        sheet.deleteRow(i + 1)
+        return { success: true }
+      }
+    }
+    return { error: 'Not found' }
+  })
+}
+
+// ── Expenses (admin money tab: profit + ROI) ─────────────────
+
+function expenseSheet_() {
+  const ss = getSpreadsheet()
+  let sheet = ss.getSheetByName('expenses')
+  if (!sheet) {
+    sheet = ss.insertSheet('expenses')
+    sheet.getRange(1, 1, 1, EXPENSE_HEADERS.length).setValues([EXPENSE_HEADERS])
+      .setBackground('#6E1F31').setFontColor('#ffffff').setFontWeight('bold')
+    sheet.setFrozenRows(1)
+  }
+  return sheet
+}
+
+function listExpenses(pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  const sheet = getSpreadsheet().getSheetByName('expenses')
+  if (!sheet || sheet.getLastRow() < 2) return { expenses: [] }
+  const data = sheet.getDataRange().getValues()
+  const headers = data[0]
+  const out = []
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue
+    const r = {}
+    headers.forEach(function (h, j) {
+      const v = data[i][j]
+      // Sheets turns a typed date into a Date; hand back plain yyyy-MM-dd
+      r[h] = v instanceof Date ? Utilities.formatDate(v, 'Asia/Bangkok', h === 'date' ? 'yyyy-MM-dd' : "yyyy-MM-dd'T'HH:mm:ssXXX") : v
+    })
+    out.push(r)
+  }
+  return { expenses: out }
+}
+
+function addExpense(body) {
+  const authErr = checkPin(body.pin)
+  if (authErr) return authErr
+  const date = String(body.date || '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'วันที่ไม่ถูกต้อง' }
+  const amount = Math.round(Number(body.amount) * 100) / 100
+  if (!(amount > 0) || amount > 1000000) return { error: 'จำนวนเงินไม่ถูกต้อง' }
+  const category = String(body.category || '')
+  if (!EXPENSE_CATEGORIES[category]) return { error: 'หมวดไม่ถูกต้อง' }
+  const cameraId = String(body.cameraId || '').slice(0, 32)
+  const note = String(body.note || '').slice(0, 200)
+  const requestKey = String(body.requestKey || '').slice(0, 64)
+
+  return withScriptLock_(function () {
+    const sheet = expenseSheet_()
+    if (requestKey && sheet.getLastRow() >= 2) {
+      const data = sheet.getDataRange().getValues()
+      const iKey = data[0].indexOf('request_key')
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][iKey]) === requestKey) return { success: true, id: String(data[i][0]) }
+      }
+    }
+    const id = 'EX' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 1296).toString(36).toUpperCase()
+    const row = { id: id, date: date, category: category, amount: amount, camera_id: cameraId, note: note, created_at: new Date().toISOString(), request_key: requestKey }
+    // Keep the date as text so Sheets doesn't shift it by timezone
+    sheet.appendRow(EXPENSE_HEADERS.map(function (h) { return h === 'date' ? "'" + date : row[h] }))
+    return { success: true, id: id }
+  })
+}
+
+function deleteExpense(id, pin) {
+  const authErr = checkPin(pin)
+  if (authErr) return authErr
+  const sheet = getSpreadsheet().getSheetByName('expenses')
+  if (!sheet) return { error: 'Not found' }
   return withScriptLock_(function () {
     const data = sheet.getDataRange().getValues()
     for (let i = 1; i < data.length; i++) {
